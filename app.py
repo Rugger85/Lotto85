@@ -66,7 +66,7 @@ missing = [k for k, v in {
 
 if missing:
     st.error(
-        "Missing required config. Add these in Streamlit Cloud Secrets later:\n\n"
+        "Missing required config. Add these in Streamlit Cloud Secrets:\n\n"
         + ", ".join(missing)
     )
     st.stop()
@@ -125,9 +125,6 @@ lotto_c = w3.eth.contract(address=LOTTO_CONTRACT, abi=LOTTO_ABI) if LOTTO_ABI el
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-def now_ts() -> int:
-    return int(datetime.now(tz=timezone.utc).timestamp())
-
 def fmt_addr(a: str) -> str:
     a = str(a)
     return a[:6] + "…" + a[-4:] if a.startswith("0x") and len(a) > 10 else a
@@ -152,27 +149,10 @@ def ts(t: int | None) -> str:
     except Exception:
         return "N/A"
 
-def fmt_countdown(seconds: int) -> str:
-    if seconds <= 0:
-        return "0s"
-    d, rem = divmod(seconds, 86400)
-    h, rem = divmod(rem, 3600)
-    m, s = divmod(rem, 60)
-    if d > 0:
-        return f"{d}d {h}h {m}m"
-    if h > 0:
-        return f"{h}h {m}m"
-    if m > 0:
-        return f"{m}m {s}s"
-    return f"{s}s"
-
+# Your contract enum:
+# enum RoundState { OPEN, SALES_CLOSED, DRAWN }
 def state_lbl(s: int) -> str:
-    # Contract enum: 0=OPEN, 1=SALES_CLOSED, 2=DRAWN
-    return {
-        0: "🟢 OPEN",
-        1: "🔒 SALES CLOSED",
-        2: "🎉 DRAWN",
-    }.get(int(s), f"State {s}")
+    return {0: "🟢 Open", 1: "🔒 Sales Closed", 2: "🎉 Drawn"}.get(int(s), f"State {s}")
 
 def pad_topic_addr(addr: str) -> str:
     return "0x" + "0" * 24 + addr.lower().replace("0x", "")
@@ -181,6 +161,18 @@ def donut(split: dict[str, float]):
     fig = go.Figure(go.Pie(labels=list(split.keys()), values=list(split.values()), hole=0.68, sort=False, textinfo="none"))
     fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=210, showlegend=False)
     return fig
+
+def countdown_label(target_ts: int) -> str:
+    now = int(datetime.now(timezone.utc).timestamp())
+    if target_ts <= 0:
+        return "N/A"
+    d = target_ts - now
+    if d <= 0:
+        return "Now"
+    days = d // 86400
+    hrs  = (d % 86400) // 3600
+    mins = (d % 3600) // 60
+    return f"{days}d {hrs}h {mins}m"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -241,15 +233,12 @@ def get_round_snap():
         rid = safe(lambda: int(lotto_c.functions.roundId().call()))
         cr  = lotto_c.functions.currentRound().call()
 
-        # UsdtLottoManual.currentRound():
-        # (state, drawTimestamp, salesCloseTimestamp, ticketsSold, startTicketId, commitHash)
         state     = int(cr[0]) if len(cr) > 0 else 0
         draw_ts   = int(cr[1]) if len(cr) > 1 else 0
         close_ts  = int(cr[2]) if len(cr) > 2 else 0
         sold      = int(cr[3]) if len(cr) > 3 else 0
         start_id  = int(cr[4]) if len(cr) > 4 else None
 
-        # Pull USDT metadata from contract USDT address if available
         dec = None
         sym = None
         try:
@@ -258,8 +247,7 @@ def get_round_snap():
             dec = int(um.functions.decimals().call())
             sym = str(um.functions.symbol().call())
         except Exception:
-            dec = None
-            sym = None
+            pass
 
         tp_units = safe(lambda: int(lotto_c.functions.ticketPrice().call()))
         price_str = "N/A"
@@ -267,15 +255,6 @@ def get_round_snap():
             d = dec if dec is not None else get_snap()["dec"]
             s = sym if sym is not None else get_snap()["sym"]
             price_str = f"{tp_units / 10**d:,.4f} {s}"
-
-        # Winner % + admin fee
-        admin_bps = safe(lambda: int(lotto_c.functions.adminFeeBps().call()), None)
-        wps = []
-        try:
-            for i in range(6):
-                wps.append(int(lotto_c.functions.winnerPct(i).call()))
-        except Exception:
-            wps = []
 
         return dict(
             round_id=rid,
@@ -290,8 +269,6 @@ def get_round_snap():
             price_str=price_str,
             dec=dec if dec is not None else get_snap()["dec"],
             sym=sym if sym is not None else get_snap()["sym"],
-            admin_bps=admin_bps,
-            winner_pcts=wps
         )
     except Exception:
         return {}
@@ -300,7 +277,7 @@ def get_round_snap():
 def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
     """
     Reads TicketsBought events for wallet; returns list of purchases:
-    [{round, qty, start, end, tx, block}]
+    [{round, qty, firstTicketId, lastTicketId, tx, block}]
     """
     if not lotto_c:
         return []
@@ -320,11 +297,10 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
         for ev in evs:
             args = ev["args"]
             out.append({
-                "round": int(args.get("roundId")),
-                "qty": int(args.get("qty")),
-                "cost": int(args.get("cost")),
-                "start": int(args.get("firstTicketId")),
-                "end": int(args.get("lastTicketId")),
+                "round": int(args["roundId"]),
+                "qty": int(args["qty"]),
+                "first": int(args["firstTicketId"]),
+                "last": int(args["lastTicketId"]),
                 "tx": ev["transactionHash"].hex(),
                 "block": int(ev["blockNumber"]),
             })
@@ -382,7 +358,8 @@ async () => {
     return {ok:false, err: e && e.message ? e.message : String(e)};
   }
 }
-""")
+""", key="js_connect_metamask")
+
     if isinstance(res, dict) and res.get("ok") and res.get("address"):
         st.session_state.wallet = res["address"]
         st.session_state.wallet_type = "metamask"
@@ -456,13 +433,6 @@ is_manual = st.session_state.wallet_type == "manual"
 net_badge = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
 abi_txt = "✅ ABI Loaded" if lotto_c else "⚠️ ABI not loaded (add lotto_abi.json)"
 
-# Time-based sales close (important!)
-now = now_ts()
-close_ts = int(rsnap.get("close_ts") or 0) if rsnap else 0
-draw_ts  = int(rsnap.get("draw_ts") or 0) if rsnap else 0
-sales_closed_by_time = (close_ts > 0 and now >= close_ts)
-draw_ready_by_time   = (draw_ts > 0 and now >= draw_ts)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Navbar
@@ -470,7 +440,7 @@ draw_ready_by_time   = (draw_ts > 0 and now >= draw_ts)
 l, m, r = st.columns([1.4, 3.5, 1.7], gap="small")
 
 with l:
-    st.markdown(f"### 🎰 LOTTOLOTTERY")
+    st.markdown("### 🎰 LOTTOLOTTERY")
 with m:
     st.markdown(
         f'<div class="muted">'
@@ -485,11 +455,11 @@ with r:
     if not wallet:
         c1, c2 = st.columns(2, gap="small")
         with c1:
-            st.button("🔗 Connect", on_click=do_connect_metamask)
+            st.button("🔗 Connect", on_click=do_connect_metamask, key="nav_connect")
         with c2:
-            st.button("✏️ Manual", on_click=open_manual)
+            st.button("✏️ Manual", on_click=open_manual, key="nav_manual")
     else:
-        st.button(f"{'🦊' if is_mm else '✏️'} {fmt_addr(wallet)} ✕", on_click=do_disconnect)
+        st.button(f"{'🦊' if is_mm else '✏️'} {fmt_addr(wallet)} ✕", on_click=do_disconnect, key="nav_disconnect")
 
 # Toasts
 txs = st.session_state.tx_status
@@ -519,9 +489,9 @@ if st.session_state.show_manual and not wallet:
 
     b1, b2 = st.columns(2, gap="small")
     with b1:
-        st.button("✅ Use This Address", on_click=submit_manual)
+        st.button("✅ Use This Address", on_click=submit_manual, key="manual_submit")
     with b2:
-        st.button("Cancel", on_click=close_manual)
+        st.button("Cancel", on_click=close_manual, key="manual_cancel")
 
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
@@ -533,17 +503,19 @@ if st.session_state.show_manual and not wallet:
 hl, hr = st.columns([1.1, 1], gap="large")
 
 with hl:
-    rid = rsnap.get("round_id") if rsnap else None
+    rid = rsnap.get("round_id")
     st.markdown(f'<span class="pill">{"ROUND #"+str(rid) if rid else "LIVE"}</span>', unsafe_allow_html=True)
     st.markdown("## DECENTRALIZED WEALTH DISTRIBUTION")
     st.markdown('<div class="muted">On-chain lottery with transparent pool and auditable ticket ranges.</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="btnrow">', unsafe_allow_html=True)
     bA, bB, bC = st.columns(3, gap="small")
-    with bA: st.button("🟡 Buy Tickets", on_click=lambda: st.session_state.update(ui_mode="buy"))
-    with bB: st.button("🎟️ My Tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"))
+    with bA:
+        st.button("🟡 Buy Tickets", on_click=lambda: st.session_state.update(ui_mode="buy"), key="hero_buy")
+    with bB:
+        st.button("🎟️ My Tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"), key="hero_mytickets")
     with bC:
-        if st.button("🔄 Refresh"):
+        if st.button("🔄 Refresh", key="hero_refresh"):
             st.cache_data.clear()
             st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
@@ -561,20 +533,11 @@ with hr:
     st.markdown('<div class="muted" style="font-size:11px; font-weight:800; letter-spacing:1px;">TOTAL PRIZE POOL</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="big">{pool:,.2f} <span style="font-size:16px; opacity:.75">{sym}</span></div>', unsafe_allow_html=True)
 
-    sold = rsnap.get("sold", "—") if rsnap else "—"
-    price = rsnap.get("price_str", "N/A") if rsnap else "N/A"
-
-    # Effective status (time-aware)
-    chain_state = int(rsnap.get("state", 0)) if rsnap else 0
-    if chain_state == 2:
-        stt = "🎉 DRAWN"
-    elif sales_closed_by_time:
-        stt = "🔒 SALES CLOSED"
-    else:
-        stt = "🟢 OPEN"
-
+    stt = state_lbl(rsnap.get("state", 0)) if rsnap else "🟢 Open"
     draw_str = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
     close_str = rsnap.get("close_str", "N/A") if rsnap else "N/A"
+    sold = rsnap.get("sold", "—")
+    price = rsnap.get("price_str", "N/A")
 
     a1, a2 = st.columns(2, gap="small")
     with a1:
@@ -584,13 +547,17 @@ with hr:
         st.metric("Contract BNB", f"{snap['c_bnb']:.4f}")
         st.metric("Admin BNB", f"{snap['a_bnb']:.4f}")
 
-    st.markdown(f'<div class="muted">State: <b>{stt}</b> &nbsp;·&nbsp; Next Draw: <b>{draw_str}</b></div>', unsafe_allow_html=True)
-
-    if close_ts > 0 and chain_state != 2:
-        if sales_closed_by_time:
-            st.caption(f"Sales closed at: {close_str} (contract will show OPEN until owner calls closeSales())")
-        else:
-            st.caption(f"Sales close in: {fmt_countdown(close_ts - now)} · Close time: {close_str}")
+    if rsnap:
+        st.markdown(
+            f'<div class="muted">'
+            f'State: <b>{stt}</b><br/>'
+            f'Sales Close: <b>{close_str}</b> (<b>{countdown_label(int(rsnap.get("close_ts",0)))}</b>)<br/>'
+            f'Next Draw: <b>{draw_str}</b> (<b>{countdown_label(int(rsnap.get("draw_ts",0)))}</b>)'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(f'<div class="muted">State: <b>{stt}</b> &nbsp;·&nbsp; Next Draw: <b>{draw_str}</b></div>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -603,19 +570,23 @@ st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 if st.session_state.ui_mode == "buy":
     st.markdown('<div class="card">', unsafe_allow_html=True)
     h1, h2 = st.columns([8, 1])
-    with h1: st.markdown("### 🟡 Buy Tickets")
-    with h2: st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"))
+    with h1:
+        st.markdown("### 🟡 Buy Tickets")
+    with h2:
+        st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"), key="buy_close")
 
     if not wallet:
         st.info("Connect MetaMask to buy tickets, or enter a wallet address for read-only mode.")
         c1, c2 = st.columns(2, gap="small")
-        with c1: st.button("🦊 Connect MetaMask", on_click=do_connect_metamask)
-        with c2: st.button("✏️ Manual", on_click=open_manual)
+        with c1:
+            st.button("🦊 Connect MetaMask", on_click=do_connect_metamask, key="buy_connect")
+        with c2:
+            st.button("✏️ Manual", on_click=open_manual, key="buy_manual")
         st.markdown("</div>", unsafe_allow_html=True)
 
     elif is_manual:
         st.warning(f"Read-only mode: {fmt_addr(wallet)}. Buying requires MetaMask.")
-        st.button("🦊 Switch to MetaMask", on_click=do_connect_metamask)
+        st.button("🦊 Switch to MetaMask", on_click=do_connect_metamask, key="buy_switch_mm")
         st.markdown("</div>", unsafe_allow_html=True)
 
     else:
@@ -623,23 +594,12 @@ if st.session_state.ui_mode == "buy":
             st.error("ABI not loaded. Add lotto_abi.json to repo root so we can read ticket price & round details.")
             st.markdown("</div>", unsafe_allow_html=True)
         else:
-            # Enforce time-based close in UI (matches contract rule)
-            if sales_closed_by_time:
-                st.error(f"Sales are CLOSED (since {ts(close_ts)}). You can’t buy tickets for this round.")
-                st.caption("Note: Contract may still show state OPEN until the owner calls closeSales().")
-                st.markdown("</div>", unsafe_allow_html=True)
-                st.stop()
-            else:
-                if close_ts > 0:
-                    st.info(f"Sales close in: {fmt_countdown(close_ts - now)} · Close time: {ts(close_ts)}")
-
-            max_per_buy = safe(lambda: int(lotto_c.functions.maxTicketsPerBuy().call()), 100)
             qty = st.number_input(
                 "Number of tickets",
-                min_value=1,
-                max_value=int(max_per_buy),
+                min_value=1, max_value=100,
                 value=int(st.session_state.buy_qty),
-                step=1
+                step=1,
+                key="buy_qty_input"
             )
             st.session_state.buy_qty = int(qty)
 
@@ -660,7 +620,7 @@ if st.session_state.ui_mode == "buy":
                 st.warning("Ticket price unavailable from contract.")
                 st.markdown("</div>", unsafe_allow_html=True)
             else:
-                if st.button(f"🟡 Buy {qty} Ticket{'s' if qty > 1 else ''} via MetaMask"):
+                if st.button(f"🟡 Buy {qty} Ticket{'s' if qty > 1 else ''} via MetaMask", key="buy_submit"):
                     js = f"""
 async()=>{{
   try {{
@@ -700,16 +660,15 @@ async()=>{{
   }}
 }}
 """
-                    res = st_javascript(js)
+                    res = st_javascript(js, key=f"js_buy_{int(qty)}_{int(total_cost_units)}")
                     if isinstance(res, dict) and res.get("ok"):
                         st.success(f"✅ Purchased! Tx: {res.get('hash')}")
                         st.markdown(f"[🔍 View on BscScan](https://bscscan.com/tx/{res.get('hash')})")
                         st.cache_data.clear()
-                        st.rerun()
                     else:
                         st.error(f"❌ Failed: {(res.get('err') if isinstance(res, dict) else res)}")
 
-                st.caption("Payouts are on-chain (contract stores ticket ownership).")
+                st.caption("Your contract enforces sales close = drawTimestamp - leadTimeSeconds.")
                 st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -719,14 +678,18 @@ async()=>{{
 elif st.session_state.ui_mode == "my_tickets":
     st.markdown('<div class="card">', unsafe_allow_html=True)
     h1, h2 = st.columns([8, 1])
-    with h1: st.markdown("### 🎟️ My Tickets")
-    with h2: st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"))
+    with h1:
+        st.markdown("### 🎟️ My Tickets")
+    with h2:
+        st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"), key="my_close")
 
     if not wallet:
         st.info("Connect or enter a wallet address to view tickets.")
         c1, c2 = st.columns(2, gap="small")
-        with c1: st.button("🦊 Connect MetaMask", on_click=do_connect_metamask)
-        with c2: st.button("✏️ Manual", on_click=open_manual)
+        with c1:
+            st.button("🦊 Connect MetaMask", on_click=do_connect_metamask, key="my_connect")
+        with c2:
+            st.button("✏️ Manual", on_click=open_manual, key="my_manual")
         st.markdown("</div>", unsafe_allow_html=True)
 
     elif not lotto_c:
@@ -737,7 +700,7 @@ elif st.session_state.ui_mode == "my_tickets":
     else:
         st.caption(f"Wallet: {wallet} ({'MetaMask' if is_mm else 'Read-only'})")
 
-        lookback = st.slider("Lookback blocks", min_value=10_000, max_value=300_000, value=120_000, step=10_000)
+        lookback = st.slider("Lookback blocks", min_value=10_000, max_value=300_000, value=120_000, step=10_000, key="my_lookback")
         with st.spinner("Fetching ticket purchases…"):
             purchases = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
 
@@ -746,17 +709,17 @@ elif st.session_state.ui_mode == "my_tickets":
             st.markdown("</div>", unsafe_allow_html=True)
         else:
             rounds = sorted({p["round"] for p in purchases}, reverse=True)
-            pick_round = st.selectbox("Round", rounds, index=0)
+            pick_round = st.selectbox("Round", rounds, index=0, key="my_round_select")
 
             subset = [p for p in purchases if p["round"] == pick_round]
             st.markdown(f"**{len(subset)} purchase(s) found in Round #{pick_round}:**")
 
-            expand_small = st.checkbox("Expand into individual ticket numbers (only if qty ≤ 50)", value=False)
+            expand_small = st.checkbox("Expand into individual ticket numbers (only if qty ≤ 50)", value=False, key="my_expand")
 
-            for p in subset:
+            for i, p in enumerate(subset):
                 qty = int(p["qty"])
-                start = int(p["start"])
-                end = int(p["end"])
+                start = int(p["first"])
+                end = int(p["last"])
                 tx = p["tx"]
 
                 st.markdown(
@@ -774,7 +737,7 @@ elif st.session_state.ui_mode == "my_tickets":
 
                 if expand_small and qty <= 50:
                     ids = list(range(start, end + 1))
-                    st.code(", ".join(map(str, ids)))
+                    st.code(", ".join(map(str, ids)), language="text")
 
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -784,17 +747,15 @@ elif st.session_state.ui_mode == "my_tickets":
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-# Dynamic prize split from contract if possible
-PRIZE_SPLIT = {}
-if rsnap and rsnap.get("winner_pcts") and rsnap.get("admin_bps") is not None:
-    wps = rsnap["winner_pcts"]
-    admin_pct = float(rsnap["admin_bps"]) / 100.0
-    for i, pct in enumerate(wps, start=1):
-        PRIZE_SPLIT[f"Winner #{i} ({pct}%)"] = float(pct)
-    PRIZE_SPLIT[f"Admin Fee ({admin_pct:.2f}%)"] = float(admin_pct)
-else:
-    # fallback (avoid wrong numbers if ABI missing)
-    PRIZE_SPLIT = {"Winners": 80, "Admin Fee": 20}
+PRIZE_SPLIT = {
+    "1st Prize (40%)": 40,
+    "2nd Prize (25%)": 25,
+    "3rd Prize (15%)": 15,
+    "4th Prize (10%)": 10,
+    "5th Prize (5%)": 5,
+    "6th Prize (5%)": 5,
+    "Admin Fee (20%)": 20,
+}
 
 c1, c2, c3 = st.columns(3, gap="large")
 
