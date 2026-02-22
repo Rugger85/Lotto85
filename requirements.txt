@@ -1,0 +1,11 @@
+streamlit==1.36.0
+web3==6.20.2
+python-dotenv==1.0.1
+plotly==5.23.0
+streamlit-javascript==0.1.5
+eth-account==0.11.3
+bcrypt==4.2.0
+pyotp==2.9.0
+qrcode==7.4.2
+pillow==10.4.0
+sendgrid==6.11.0
