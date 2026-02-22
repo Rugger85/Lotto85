@@ -29,7 +29,7 @@ st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Config
+# Config (Streamlit Cloud: st.secrets, Local: .env)
 # ─────────────────────────────────────────────────────────────────────────────
 def cfg(key: str, default: str = "") -> str:
     if key in st.secrets:
@@ -49,6 +49,7 @@ for k in ["BSC_RPC_2", "BSC_RPC_3", "BSC_RPC_4", "BSC_RPC_5"]:
     if v:
         RPCS.append(v)
 
+# Public fallbacks (good to keep)
 RPCS += [
     "https://bsc-dataseed.binance.org/",
     "https://bsc-dataseed1.binance.org/",
@@ -64,7 +65,7 @@ missing = [k for k, v in {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Web3 connect
+# Web3 connect (with RPC fallback)
 # ─────────────────────────────────────────────────────────────────────────────
 def connect_web3() -> tuple[Web3 | None, str | None]:
     for rpc in RPCS:
@@ -122,15 +123,21 @@ def ts(t: int | None) -> str:
         return "N/A"
 
 def state_lbl_contract(s: int) -> str:
-    return {0: "&#x1F7E2; Open", 1: "&#x1F512; Sales Closed", 2: "&#x1F389; Drawn"}.get(int(s), f"State {s}")
+    # Your contract enum: OPEN=0, SALES_CLOSED=1, DRAWN=2
+    return {0: "🟢 Open", 1: "🔒 Sales Closed", 2: "🎉 Drawn"}.get(int(s), f"State {s}")
 
 def pad_topic_addr(addr: str) -> str:
     return "0x" + "0" * 24 + addr.lower().replace("0x", "")
 
+def donut(split: dict[str, float]):
+    fig = go.Figure(go.Pie(labels=list(split.keys()), values=list(split.values()), hole=0.68, sort=False, textinfo="none"))
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=240, showlegend=False)
+    return fig
+
 def glass_card(title: str, body_html: str, id_: str):
     st.markdown(
         f"""
-<div class="glass" id="{id_}">
+<div class="glass card-anim" id="{id_}">
   <div class="glass-head">{title}</div>
   <div class="glass-body">{body_html}</div>
 </div>
@@ -148,10 +155,10 @@ def do_refresh():
 # ─────────────────────────────────────────────────────────────────────────────
 for k, v in dict(
     wallet=None,
-    wallet_type=None,
+    wallet_type=None,   # "metamask" / "manual"
     show_manual=False,
     manual_input="",
-    ui_mode="landing",
+    ui_mode="landing",  # landing / buy / my_tickets
     toast=None,
     toast_val=None,
 ).items():
@@ -160,7 +167,7 @@ for k, v in dict(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Wallet callbacks
+# Wallet connect callbacks
 # ─────────────────────────────────────────────────────────────────────────────
 def open_manual():
     st.session_state.show_manual = True
@@ -219,460 +226,250 @@ def submit_manual():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSS + Particles — FIXED:
-#  1. particles canvas uses pointer-events:none and z-index:-1 (behind content)
-#  2. glass cards are visible by default (no opacity:0 animation that breaks)
-#  3. All emoji use HTML entities to avoid browser rendering issues
-#  4. Buttons have proper styling without emoji artifacts
-#  5. Glass head font-size reduced for better hierarchy
+# UI (Glass + Animations + Particles)
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800;900&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap');
+#MainMenu, header, footer, [data-testid="stToolbar"], [data-testid="stStatusWidget"] {display:none!important;}
+.block-container{padding-top:1.25rem; padding-bottom:3rem; max-width: 1200px;}
+a{color:#f5c400; text-decoration:none;}
+a:hover{text-decoration:underline;}
 
-#MainMenu, header, footer,
-[data-testid="stToolbar"],
-[data-testid="stStatusWidget"] { display:none!important; }
-
-.block-container {
-  padding-top: 0 !important;
-  padding-bottom: 3rem;
-  max-width: 1200px;
+:root{
+  --gold:#f5c400;
+  --text:#e9eef7;
+  --muted:rgba(233,238,247,.60);
+  --glass:rgba(20, 25, 40, 0.45);
+  --border:rgba(255,255,255,.12);
+  --shadow: 0 8px 32px rgba(0,0,0,.42);
 }
 
-*, *::before, *::after { box-sizing: border-box; }
-
-:root {
-  --gold: #f5c400;
-  --gold-dim: rgba(245,196,0,.70);
-  --text: #e9eef7;
-  --muted: rgba(233,238,247,.55);
-  --glass: rgba(16, 20, 36, 0.55);
-  --glass-hover: rgba(22, 28, 48, 0.70);
-  --border: rgba(255,255,255,.10);
-  --border-gold: rgba(245,196,0,.22);
-  --shadow: 0 8px 40px rgba(0,0,0,.50);
-  --radius: 20px;
-}
-
-/* ── Background ── */
-[data-testid="stAppViewContainer"] {
+[data-testid="stAppViewContainer"]{
   background:
-    radial-gradient(ellipse 80% 50% at 10% 10%, rgba(245,196,0,.06), transparent 60%),
-    radial-gradient(ellipse 60% 40% at 90% 80%, rgba(0,120,255,.05), transparent 55%),
-    linear-gradient(160deg, #04060c 0%, #070a14 60%, #050810 100%) !important;
+    radial-gradient(circle at 15% 20%, rgba(245,196,0,0.07), transparent 40%),
+    radial-gradient(circle at 85% 70%, rgba(0,150,255,0.05), transparent 40%),
+    linear-gradient(180deg,#05070c 0%,#07090f 100%) !important;
   color: var(--text) !important;
-  font-family: 'DM Sans', sans-serif;
 }
 
-/* ── Particles — BEHIND everything ── */
-#particles-wrap {
+/* particles layer (behind everything) */
+#particles-wrap{
   position: fixed;
   inset: 0;
-  z-index: -1;          /* FIX: was 0, now -1 so it never intercepts clicks */
-  pointer-events: none;
-  overflow: hidden;
+  z-index: 0;
+  pointer-events:none;
+  opacity: .70;
 }
-#particles-wrap canvas {
-  width: 100%;
-  height: 100%;
-  opacity: .65;
-}
-
-/* ── Main content always above ── */
-[data-testid="stAppViewContainer"] > .main {
-  position: relative;
-  z-index: 1;
-}
-[data-testid="block-container"] {
-  position: relative;
-  z-index: 1;
+canvas#particles{
+  width:100%;
+  height:100%;
+  filter: blur(.2px);
 }
 
-/* ── Navbar ── */
-.nav {
+/* content above particles */
+[data-testid="stAppViewContainer"] > .main { position: relative; z-index: 1; }
+
+/* NAVBAR */
+.nav{
   position: sticky;
   top: 0;
-  z-index: 100;
-  margin: 0 0 24px 0;
-  padding: 14px 20px;
-  background: rgba(8, 11, 20, 0.80);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-bottom: 1px solid var(--border);
-  box-shadow: 0 2px 32px rgba(0,0,0,.40);
+  z-index: 50;
+  margin: -6px 0 18px 0;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(15,19,31,0.50);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
 }
-
-.brand-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.brand{
+  display:flex;
+  align-items:center;
+  gap: 10px;
 }
-.brand-icon {
-  width: 40px;
-  height: 40px;
+.brand .logo{
+  width: 36px; height: 36px;
   border-radius: 12px;
-  background: rgba(245,196,0,.12);
-  border: 1px solid var(--border-gold);
-  display: grid;
-  place-items: center;
-  font-size: 20px;
-  box-shadow: 0 0 20px rgba(245,196,0,.15);
+  display:grid; place-items:center;
+  background: rgba(245,196,0,0.12);
+  border: 1px solid rgba(245,196,0,0.24);
+  box-shadow: 0 0 24px rgba(245,196,0,0.12);
 }
-.brand-name {
-  font-family: 'Syne', sans-serif;
+.brand .title{
   font-weight: 900;
-  font-size: 18px;
-  letter-spacing: 1.5px;
-  color: var(--gold);
+  letter-spacing: .6px;
 }
-.pill {
-  display: inline-block;
-  padding: 3px 10px;
+.badges{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  flex-wrap:wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pill{
+  display:inline-block;
+  padding: 4px 10px;
   border-radius: 999px;
   background: rgba(245,196,0,.10);
-  border: 1px solid var(--border-gold);
+  border: 1px solid rgba(245,196,0,.22);
   color: var(--gold);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .6px;
-  text-transform: uppercase;
-}
-.nav-info {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.8;
-  margin-top: 2px;
-}
-.nav-info b { color: var(--text); }
-
-/* ── Streamlit button overrides ── */
-div.stButton > button {
-  width: 100% !important;
-  height: 40px !important;
-  border-radius: 12px !important;
-  font-family: 'DM Sans', sans-serif !important;
-  font-weight: 600 !important;
-  font-size: 13px !important;
-  border: 1px solid var(--border) !important;
-  background: rgba(255,255,255,.05) !important;
-  color: var(--text) !important;
-  box-shadow: none !important;
-  transition: all .2s ease !important;
-  padding: 0 14px !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-}
-div.stButton > button:hover {
-  border-color: var(--border-gold) !important;
-  background: rgba(245,196,0,.08) !important;
-  color: var(--gold) !important;
-  transform: translateY(-1px) !important;
-}
-div.stButton > button:active {
-  transform: translateY(0) !important;
-}
-
-/* Gold primary button */
-.btn-primary div.stButton > button {
-  background: linear-gradient(135deg, rgba(245,196,0,.20), rgba(245,150,0,.12)) !important;
-  border: 1px solid rgba(245,196,0,.40) !important;
-  color: var(--gold) !important;
-  font-weight: 700 !important;
-}
-.btn-primary div.stButton > button:hover {
-  background: linear-gradient(135deg, rgba(245,196,0,.28), rgba(245,150,0,.18)) !important;
-  box-shadow: 0 0 30px rgba(245,196,0,.15) !important;
-}
-
-/* ── Separator ── */
-.sep {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
-  margin: 28px 0;
-}
-
-/* ── Hero ── */
-.hero {
-  padding: 8px 0 20px 0;
-}
-.hero h1 {
-  font-family: 'Syne', sans-serif;
+  font-size: 11px;
   font-weight: 900;
-  font-size: 52px;
-  color: var(--gold);
-  margin: 0 0 8px 0;
-  letter-spacing: -.5px;
-  text-shadow: 0 0 60px rgba(245,196,0,.25);
-}
-.hero .sub {
-  color: var(--text);
-  font-size: 16px;
-  margin: 0 0 4px 0;
-  opacity: .85;
-}
-.hero .note {
-  color: var(--muted);
-  font-size: 13px;
+  letter-spacing: .4px;
 }
 
-/* ── Glass cards — ALWAYS VISIBLE (no animation that hides them) ── */
-.glass {
+/* GLASS CARDS */
+.glass{
   position: relative;
   background: var(--glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 24px 26px;
+  border-radius: 26px;
+  padding: 22px 22px;
   box-shadow: var(--shadow);
   overflow: hidden;
-  margin-bottom: 14px;
-  transition: border-color .3s ease, box-shadow .3s ease;
 }
-.glass:hover {
-  border-color: rgba(245,196,0,.18);
-  box-shadow: 0 12px 50px rgba(0,0,0,.55), 0 0 60px rgba(245,196,0,.04);
+.glass::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  border-radius: 28px;
+  background: radial-gradient(600px 200px at 10% 20%, rgba(245,196,0,.13), transparent 60%),
+              radial-gradient(500px 220px at 90% 70%, rgba(0,150,255,.09), transparent 60%);
+  opacity: .55;
+  z-index:0;
 }
-.glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius);
-  background:
-    radial-gradient(500px 180px at 0% 0%, rgba(245,196,0,.07), transparent 70%),
-    radial-gradient(400px 200px at 100% 100%, rgba(0,140,255,.05), transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-.glass > * { position: relative; z-index: 1; }
+.glass > *{ position:relative; z-index:1; }
 
-.glass-head {
-  font-family: 'Syne', sans-serif;
-  font-size: 20px;
-  font-weight: 800;
+.glass-head{
+  font-size: 28px;
+  font-weight: 950;
   color: var(--gold);
-  letter-spacing: .3px;
-  margin-bottom: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  text-shadow: 0 0 14px rgba(245,196,0,0.35);
+  margin-bottom: 10px;
 }
-.glass-head::before {
-  content: "";
-  display: inline-block;
-  width: 3px;
-  height: 18px;
-  background: var(--gold);
-  border-radius: 2px;
-  opacity: .7;
-}
-
-.glass-body {
+.glass-body{
   color: var(--text);
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 15px;
+  line-height: 1.6;
 }
-.glass-body .muted { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-.glass-body ul { margin: 8px 0 0 16px; padding: 0; }
-.glass-body li { margin: 6px 0; color: var(--text); }
-.glass-body b { color: var(--gold-dim); font-weight: 600; }
+.glass-body .muted{ color: var(--muted); }
+.glass-body ul{ margin: 10px 0 0 18px; }
+.glass-body li{ margin: 6px 0; color: var(--text); }
 
-/* ── Dashboard stat rows ── */
-.stat-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255,255,255,.04);
+/* BUTTONS */
+div.stButton>button{
+  width:100%;
+  border-radius: 14px !important;
+  font-weight: 900 !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+  background: rgba(15,19,31,.70) !important;
+  color: var(--text) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25) !important;
+  transition: all .25s ease !important;
 }
-.stat-row:last-child { border-bottom: none; }
-.stat-label { color: var(--muted); font-size: 12px; }
-.stat-value { font-weight: 600; font-size: 14px; color: var(--text); }
+div.stButton>button:hover{
+  border-color: rgba(245,196,0,.45) !important;
+  box-shadow: 0 14px 40px rgba(0,0,0,.35), 0 0 45px rgba(245,196,0,.10) !important;
+  transform: translateY(-1px);
+}
+.btn-gold div.stButton>button{
+  background: rgba(245,196,0,.15) !important;
+  border: 1px solid rgba(245,196,0,.35) !important;
+  color: var(--gold) !important;
+}
+.btn-gold div.stButton>button:hover{
+  background: rgba(245,196,0,.20) !important;
+}
 
-/* Pool number */
-.pool-amount {
-  font-family: 'Syne', sans-serif;
+/* HERO */
+.hero{ padding: 16px 0 10px 0; }
+.hero h1{
+  margin: 0;
   font-size: 48px;
-  font-weight: 900;
+  font-weight: 1000;
   color: var(--gold);
-  line-height: 1;
-  letter-spacing: -1px;
-  margin: 8px 0 4px 0;
-  text-shadow: 0 0 40px rgba(245,196,0,.30);
+  letter-spacing: .2px;
 }
-.pool-sym {
-  font-size: 16px;
+.hero p{
+  margin: 8px 0 0 0;
   color: var(--muted);
-  font-weight: 400;
-  margin-left: 4px;
-}
-
-/* ── Ticket purchase card ── */
-.ticket-entry {
-  margin-top: 12px;
-  padding: 16px 18px;
-  border-radius: 16px;
-  border: 1px solid rgba(245,196,0,.15);
-  background: rgba(245,196,0,.04);
-  transition: border-color .2s;
-}
-.ticket-entry:hover {
-  border-color: rgba(245,196,0,.30);
-}
-.ticket-round {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  color: var(--gold);
   font-size: 15px;
 }
-.ticket-meta {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 6px;
-  line-height: 1.7;
-}
-.ticket-meta a { color: var(--gold); text-decoration: none; }
-.ticket-meta a:hover { text-decoration: underline; }
 
-/* ── Footer ── */
-.footer {
-  text-align: center;
-  padding: 24px 0 8px 0;
-  color: var(--muted);
-  font-size: 11px;
-  letter-spacing: .3px;
-}
-.footer span { color: var(--gold); }
+.sep{ height:1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); margin: 22px 0; }
 
-/* ── Streamlit input ── */
-[data-testid="stTextInput"] input {
-  background: rgba(255,255,255,.05) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 10px !important;
-  color: var(--text) !important;
-  font-family: 'DM Sans', sans-serif !important;
-}
-[data-testid="stTextInput"] input:focus {
-  border-color: var(--border-gold) !important;
-  box-shadow: 0 0 0 2px rgba(245,196,0,.10) !important;
-}
-
-/* ── Number input ── */
-[data-testid="stNumberInput"] input {
-  background: rgba(255,255,255,.05) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
-  border-radius: 10px !important;
-}
-
-/* ── Selectbox ── */
-[data-testid="stSelectbox"] > div > div {
-  background: rgba(255,255,255,.05) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 10px !important;
-  color: var(--text) !important;
-}
-
-/* ── Slider ── */
-[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
-  background: var(--gold) !important;
-}
-
-/* ── Alerts ── */
-[data-testid="stAlert"] {
-  border-radius: 12px !important;
-  border: none !important;
-}
-
-/* ── Spinner ── */
-[data-testid="stSpinner"] { color: var(--gold) !important; }
-
-/* ── Columns gap fix ── */
-[data-testid="column"] { padding: 0 6px !important; }
+/* Scroll animation */
+.card-anim{ opacity: 0; transform: translateY(14px); transition: all .75s ease; }
+.card-anim.show{ opacity: 1; transform: translateY(0px); }
 </style>
 
-<!-- Particle canvas — z-index:-1 so it's purely decorative -->
-<div id="particles-wrap"><canvas id="particles-canvas"></canvas></div>
+<div id="particles-wrap"><canvas id="particles"></canvas></div>
 
 <script>
-(function() {
-  // Defer until DOM is ready
-  function initParticles() {
-    var canvas = document.getElementById('particles-canvas');
-    if (!canvas) { setTimeout(initParticles, 300); return; }
-    var ctx = canvas.getContext('2d');
-    var W, H, particles = [];
-    var N = 60;
-
-    function resize() {
-      W = canvas.width = window.innerWidth;
-      H = canvas.height = window.innerHeight;
+(function(){
+  const canvas = document.getElementById('particles');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let w, h, dpr;
+  const N = 70;
+  const p = [];
+  function resize(){
+    dpr = window.devicePixelRatio || 1;
+    w = canvas.clientWidth; h = canvas.clientHeight;
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function rnd(a,b){ return a + Math.random()*(b-a); }
+  function init(){
+    p.length = 0;
+    for(let i=0;i<N;i++){
+      p.push({x:rnd(0,w), y:rnd(0,h), r:rnd(0.8,2.2), vx:rnd(-0.35,0.35), vy:rnd(-0.25,0.25), a:rnd(0.08,0.22)});
     }
-
-    function rnd(a, b) { return a + Math.random() * (b - a); }
-
-    function makeParticle() {
-      return {
-        x: rnd(0, W), y: rnd(0, H),
-        r: rnd(0.6, 2.0),
-        vx: rnd(-0.25, 0.25),
-        vy: rnd(-0.20, 0.20),
-        a: rnd(0.06, 0.18)
-      };
+  }
+  function step(){
+    ctx.clearRect(0,0,w,h);
+    for(const s of p){
+      s.x += s.vx; s.y += s.vy;
+      if(s.x<0) s.x=w; if(s.x>w) s.x=0;
+      if(s.y<0) s.y=h; if(s.y>h) s.y=0;
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(245,196,0,${s.a})`;
+      ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+      ctx.fill();
     }
-
-    function init() {
-      particles = [];
-      for (var i = 0; i < N; i++) particles.push(makeParticle());
-    }
-
-    function draw() {
-      ctx.clearRect(0, 0, W, H);
-      // dots
-      for (var i = 0; i < particles.length; i++) {
-        var p = particles[i];
-        p.x += p.vx; p.y += p.vy;
-        if (p.x < 0) p.x = W;
-        if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H;
-        if (p.y > H) p.y = 0;
-        ctx.beginPath();
-        ctx.fillStyle = 'rgba(245,196,0,' + p.a + ')';
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // connections
-      for (var i = 0; i < particles.length; i++) {
-        for (var j = i + 1; j < particles.length; j++) {
-          var dx = particles[i].x - particles[j].x;
-          var dy = particles[i].y - particles[j].y;
-          var d = Math.sqrt(dx * dx + dy * dy);
-          if (d < 130) {
-            ctx.strokeStyle = 'rgba(245,196,0,' + ((1 - d / 130) * 0.07) + ')';
-            ctx.lineWidth = 0.8;
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.stroke();
-          }
+    for(let i=0;i<p.length;i++){
+      for(let j=i+1;j<p.length;j++){
+        const a = p[i], b = p[j];
+        const dx=a.x-b.x, dy=a.y-b.y;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        if(dist < 140){
+          ctx.strokeStyle = `rgba(245,196,0,${(1 - dist/140)*0.08})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(a.x,a.y);
+          ctx.lineTo(b.x,b.y);
+          ctx.stroke();
         }
       }
-      requestAnimationFrame(draw);
     }
-
-    resize();
-    init();
-    draw();
-    window.addEventListener('resize', function() { resize(); init(); });
+    requestAnimationFrame(step);
   }
+  resize(); init(); step();
+  window.addEventListener('resize', () => { resize(); init(); });
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initParticles);
-  } else {
-    initParticles();
-  }
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting) e.target.classList.add('show');
+    });
+  }, {threshold: 0.12});
+
+  setTimeout(()=>{
+    document.querySelectorAll('.card-anim').forEach(el=>io.observe(el));
+  }, 350);
 })();
 </script>
 """, unsafe_allow_html=True)
@@ -682,15 +479,15 @@ div.stButton > button:active {
 # Toasts
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.toast == "mm_ok":
-    st.success("Wallet connected. Dashboard unlocked.")
+    st.success("✅ Wallet connected. Dashboard unlocked.")
 elif st.session_state.toast == "mm_fail":
     st.warning(f"MetaMask connect failed: {st.session_state.toast_val}")
 elif st.session_state.toast == "no_js":
-    st.error("MetaMask unavailable (missing streamlit-javascript). Add it to requirements.txt.")
+    st.error("MetaMask actions disabled (missing `streamlit-javascript`). Add it in requirements.txt.")
 elif st.session_state.toast == "manual_ok":
-    st.success("Address saved (read-only mode).")
+    st.success("✅ Address saved (read-only).")
 elif st.session_state.toast == "manual_bad":
-    st.error("Invalid Ethereum address.")
+    st.error("❌ Invalid address.")
 elif st.session_state.toast == "manual_empty":
     st.warning("Please enter a wallet address.")
 
@@ -699,66 +496,66 @@ st.session_state.toast_val = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Content config
+# Landing content (edit text here)
 # ─────────────────────────────────────────────────────────────────────────────
 CONTENT = {
     "hero_title": "Decentralized Lottery",
-    "hero_sub": "Fully on-chain. Transparent. Verifiable.",
-    "hero_note": "Edit this text in code — add your whitepaper, tokenomics, and messaging below.",
+    "hero_sub": "Fully on-chain. Transparent. Auditable.",
+    "hero_note": "Edit this text in code. Add your own messaging like a whitepaper.",
     "sections": [
         ("How It Works", """
-<div class="muted">Full round lifecycle</div>
+<div class="muted">Explain your full structure here:</div>
 <ul>
-  <li>Each round has a fixed ticket price in USDT</li>
-  <li>Sales close automatically at the configured timestamp</li>
-  <li>Admin commits a hash before the draw; revealed on-chain for verifiability</li>
-  <li>Draw is triggered after the draw timestamp passes</li>
-  <li>6 winners are selected; prizes are distributed automatically</li>
+  <li>Ticket price</li>
+  <li>How rounds work</li>
+  <li>Sales close timing (auto by timestamp)</li>
+  <li>Draw timing</li>
+  <li>Commit-reveal security</li>
+  <li>Prize distribution</li>
 </ul>
 """),
         ("Security Model", """
-<div class="muted">How we protect participants</div>
+<div class="muted">Explain:</div>
 <ul>
-  <li>Smart contract deployed on BSC mainnet — fully auditable</li>
-  <li>Commit-reveal randomness prevents manipulation</li>
-  <li>Admin cannot alter ticket sales once sales close</li>
-  <li>All events (TicketsBought, DrawRevealed, WinnerPaid) are public on-chain</li>
-  <li>No custody of private keys — MetaMask signs all user transactions</li>
+  <li>Smart contract transparency</li>
+  <li>BSC mainnet deployment</li>
+  <li>Admin permissions</li>
+  <li>Commit hash mechanism</li>
+  <li>On-chain randomness model</li>
 </ul>
 """),
         ("Prize & Fees", """
-<div class="muted">How the pot is split</div>
+<div class="muted">Explain the split (edit freely):</div>
 <ul>
-  <li>6 winners receive a pre-configured share of the pot (sum = 100% after fees)</li>
-  <li>Admin fee is deducted from the pot at draw time</li>
-  <li>Payouts are automatic on-chain transfers — no manual claiming</li>
+  <li>Winners split: 6 winners (sum = 100%)</li>
+  <li>Admin fee: taken from pot on draw</li>
+  <li>Payouts: automatic on-chain transfers</li>
 </ul>
 """),
         ("How To Buy Tickets", """
-<div class="muted">Step-by-step guide</div>
+<div class="muted">Step-by-step guide (edit freely):</div>
 <ul>
-  <li><b>1.</b> Install MetaMask browser extension</li>
-  <li><b>2.</b> Add BSC Mainnet (Chain ID 56) to your networks</li>
-  <li><b>3.</b> Acquire BNB for gas fees and USDT for ticket purchase</li>
-  <li><b>4.</b> Click Connect above and approve the connection</li>
-  <li><b>5.</b> Enter the number of tickets and click Buy — MetaMask will prompt for USDT approval then the purchase</li>
+  <li>Install MetaMask</li>
+  <li>Add BSC Network</li>
+  <li>Buy BNB for gas + buy USDT</li>
+  <li>Connect wallet</li>
+  <li>Approve USDT</li>
+  <li>Buy tickets</li>
 </ul>
 """),
         ("Transparency", """
-<div class="muted">Everything is verifiable</div>
+<div class="muted">Add links and proofs:</div>
 <ul>
-  <li>Contract address visible on BscScan with full source</li>
-  <li>USDT token address verifiable on-chain</li>
-  <li>All TicketsBought, DrawRevealed, WinnerPaid events are public logs</li>
-  <li>Prize pool balance is live — shown in the dashboard after connecting</li>
+  <li>Contract address (BscScan)</li>
+  <li>USDT token address (BscScan)</li>
+  <li>Public logs (TicketsBought, DrawRevealed, WinnerPaid)</li>
 </ul>
 """),
         ("FAQ", """
 <ul>
-  <li><b>Do I need an account?</b> No — wallet only, no sign-up required.</li>
-  <li><b>Is it secure?</b> Yes. You sign transactions in MetaMask; the app never sees your private key.</li>
-  <li><b>Can I verify everything?</b> Yes — all balances, events, and contract logic are public on BSC.</li>
-  <li><b>What if I miss the draw?</b> Prizes are distributed automatically; no action needed from winners.</li>
+  <li><b>Do I need an account?</b> No — wallet-only.</li>
+  <li><b>Is it secure?</b> Users sign transactions in MetaMask. App never sees private keys.</li>
+  <li><b>Can I verify everything?</b> Yes, on-chain events + balances are public.</li>
 </ul>
 """),
     ]
@@ -771,127 +568,123 @@ net_badge = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# NAVBAR
+# NAVBAR (always visible)  ✅ FIXED: no mismatched </div>, no weird wrappers
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="nav">', unsafe_allow_html=True)
 
-nav_l, nav_m, nav_r = st.columns([2.0, 2.8, 2.8], gap="small")
+nav_l, nav_m, nav_r = st.columns([2.2, 2.6, 2.8], gap="small")
 
 with nav_l:
-    st.markdown(f"""
-<div class="brand-row">
-  <div class="brand-icon">&#x1F3B0;</div>
+    st.markdown(
+        f"""
+<div class="brand">
+  <div class="logo">🎰</div>
   <div>
-    <div class="brand-name">LOTTO</div>
-    <span class="pill">{net_badge}</span>
+    <div class="title">LOTTO</div>
+    <div class="badges">
+      <span class="pill">{net_badge}</span>
+    </div>
   </div>
 </div>
-""", unsafe_allow_html=True)
+""",
+        unsafe_allow_html=True
+    )
 
 with nav_m:
-    rpc_display = (ACTIVE_RPC or "Not connected")
-    if len(rpc_display) > 35:
-        rpc_display = rpc_display[:32] + "…"
-    wallet_display = fmt_addr(wallet) if wallet else "Not connected"
-    st.markdown(f"""
-<div class="nav-info">
-  RPC: <b>{rpc_display}</b><br>
-  Wallet: <b>{wallet_display}</b>
+    st.markdown(
+        f"""
+<div class="badges" style="margin-top:6px;">
+  <span>RPC: <span class="muted">{(ACTIVE_RPC or "Not connected")}</span></span>
+  <span>·</span>
+  <span>Wallet: <span class="muted">{fmt_addr(wallet) if wallet else "Not connected"}</span></span>
 </div>
-""", unsafe_allow_html=True)
+""",
+        unsafe_allow_html=True
+    )
 
 with nav_r:
-    b1, b2, b3 = st.columns([1, 1, 1.1], gap="small")
-    with b1:
-        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+    cA, cB, cC = st.columns([1.05, 1.05, 1.20], gap="small")
+
+    with cA:
+        st.markdown('<div class="btn-gold">', unsafe_allow_html=True)
         if not wallet:
-            st.button("Connect", on_click=do_connect_metamask, key="nav_connect")
+            st.button("🔗 Connect", on_click=do_connect_metamask, key="nav_connect")
         else:
-            st.button(fmt_addr(wallet), disabled=True, key="nav_wallet")
+            st.button(f"🦊 {fmt_addr(wallet)}", disabled=True, key="nav_wallet")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    with b2:
+    with cB:
         if not wallet:
-            st.button("Manual", on_click=open_manual, key="nav_manual")
+            st.button("✏️ Manual", on_click=open_manual, key="nav_manual")
         else:
-            st.button("Disconnect", on_click=do_disconnect, key="nav_disc")
+            st.button("✕ Disconnect", on_click=do_disconnect, key="nav_disc")
 
-    with b3:
-        if st.button("Whitepaper", key="nav_wp"):
+    with cC:
+        if st.button("⬆️ Whitepaper", key="nav_wp"):
             st.session_state.ui_mode = "landing"
 
 st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Manual connect panel
-# ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.show_manual and not wallet:
-    st.markdown("""
-<div class="glass" style="margin-bottom:20px;">
-  <div class="glass-head">Connect Wallet (Read-only)</div>
-  <div class="glass-body muted">Paste a wallet address to view your tickets. Buying tickets requires MetaMask.</div>
-</div>
-""", unsafe_allow_html=True)
+    st.markdown('<div class="glass card-anim show" style="margin-top:12px;">', unsafe_allow_html=True)
+    st.markdown('<div class="glass-head">Connect Wallet (Read-only)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="glass-body muted">Paste a wallet address to view tickets. Buying requires MetaMask.</div>', unsafe_allow_html=True)
 
     st.text_input("Wallet address", key="manual_input", placeholder="0x1234…abcd", label_visibility="collapsed")
+
     b1, b2 = st.columns(2, gap="small")
     with b1:
-        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-        st.button("Use This Address", on_click=submit_manual, key="manual_submit")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.button("✅ Use This Address", on_click=submit_manual, key="manual_submit")
     with b2:
         st.button("Cancel", on_click=close_manual, key="manual_cancel")
+
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HERO
+# LANDING PAGE (always public)
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown(f"""
-<div class="hero">
-  <h1>{CONTENT['hero_title']}</h1>
-  <p class="sub">{CONTENT['hero_sub']}</p>
-  <p class="note">{CONTENT['hero_note']}</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown('<div class="hero">', unsafe_allow_html=True)
+st.markdown(f"<h1>{CONTENT['hero_title']}</h1>", unsafe_allow_html=True)
+st.markdown(f"<p>{CONTENT['hero_sub']}</p>", unsafe_allow_html=True)
+st.markdown(f"<p class='muted'>{CONTENT['hero_note']}</p>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
 
 cta1, cta2, cta3 = st.columns([1.2, 1.2, 1.6], gap="small")
 with cta1:
-    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-    st.button("Buy Tickets", key="cta_buy", on_click=lambda: st.session_state.update(ui_mode="buy"))
+    st.markdown('<div class="btn-gold">', unsafe_allow_html=True)
+    st.button("🟡 Buy Tickets", key="cta_buy", on_click=lambda: st.session_state.update(ui_mode="buy"))
     st.markdown("</div>", unsafe_allow_html=True)
 with cta2:
-    st.button("My Tickets", key="cta_tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"))
+    st.button("🎟️ My Tickets", key="cta_tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"))
 with cta3:
-    st.button("Refresh", key="cta_refresh", on_click=do_refresh)
+    st.button("🔄 Refresh", key="cta_refresh", on_click=do_refresh)
 
-st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-
-# Whitepaper sections — always visible, no animation class needed
+# Render whitepaper sections (glass)
 for i, (title, body) in enumerate(CONTENT["sections"], start=1):
     glass_card(title, body, id_=f"sec_{i}")
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Config / connection guards
+# If config missing or web3 missing: show landing only, stop before chain calls
 # ─────────────────────────────────────────────────────────────────────────────
 if missing:
-    st.error(
-        "Missing required config keys. Add these in Streamlit Cloud Secrets: "
-        + ", ".join(missing)
-    )
+    st.error("Missing required config. Add these in Streamlit Cloud Secrets:\n\n" + ", ".join(missing))
     st.stop()
 
 if not w3:
-    st.error("Cannot connect to any BSC RPC endpoint. Add a reliable RPC URL in Secrets (BSC_RPC).")
+    st.error("Cannot connect to BSC RPC (all endpoints failed). Add a paid RPC in Secrets for stability.")
     st.stop()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Chain objects
+# Chain objects (safe now)
 # ─────────────────────────────────────────────────────────────────────────────
 LOTTO_CONTRACT = Web3.to_checksum_address(LOTTO_CONTRACT_ADDR)
 USDT           = Web3.to_checksum_address(USDT_ADDRESS)
@@ -911,16 +704,19 @@ lotto_c = w3.eth.contract(address=LOTTO_CONTRACT, abi=LOTTO_ABI) if LOTTO_ABI el
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Cached on-chain reads
+# Cacheable on-chain snapshots
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=15)
 def get_snap():
     dec   = int(safe(lambda: usdt_c.functions.decimals().call(), 18))
     sym   = safe(lambda: usdt_c.functions.symbol().call(), "USDT")
+
     c_raw = int(safe(lambda: usdt_c.functions.balanceOf(LOTTO_CONTRACT).call(), 0))
     a_raw = int(safe(lambda: usdt_c.functions.balanceOf(ADMIN).call(), 0))
+
     c_bnb = int(safe(lambda: w3.eth.get_balance(LOTTO_CONTRACT), 0))
     a_bnb = int(safe(lambda: w3.eth.get_balance(ADMIN), 0))
+
     blk   = int(w3.eth.block_number)
 
     logs = []
@@ -932,6 +728,7 @@ def get_snap():
             "address": USDT,
             "topics": [topic0, None, pad_topic_addr(LOTTO_CONTRACT)],
         })))[:10]
+
         for lg in rls:
             logs.append({
                 "block": int(lg["blockNumber"]),
@@ -943,9 +740,16 @@ def get_snap():
     except Exception:
         pass
 
-    return dict(block=blk, dec=dec, sym=sym,
-                c_usdt=tok(c_raw, dec), a_usdt=tok(a_raw, dec),
-                c_bnb=bnb(c_bnb), a_bnb=bnb(a_bnb), logs=logs)
+    return dict(
+        block=blk,
+        dec=dec,
+        sym=sym,
+        c_usdt=tok(c_raw, dec),
+        a_usdt=tok(a_raw, dec),
+        c_bnb=bnb(c_bnb),
+        a_bnb=bnb(a_bnb),
+        logs=logs
+    )
 
 @st.cache_data(ttl=15)
 def get_round_snap():
@@ -954,22 +758,32 @@ def get_round_snap():
     try:
         rid = int(lotto_c.functions.roundId().call())
         cr  = lotto_c.functions.currentRound().call()
-        state    = int(cr[0])
-        draw_ts  = int(cr[1])
-        close_ts = int(cr[2])
-        sold     = int(cr[3])
-        start_id = int(cr[4])
+        # Your currentRound returns: (state, drawTimestamp, salesCloseTimestamp, ticketsSold, startTicketId, commitHash)
+        state     = int(cr[0])
+        draw_ts   = int(cr[1])
+        close_ts  = int(cr[2])
+        sold      = int(cr[3])
+        start_id  = int(cr[4])
+
         dec = int(usdt_c.functions.decimals().call())
         sym = str(usdt_c.functions.symbol().call())
+
         tp_units = int(lotto_c.functions.ticketPrice().call())
+        price_str = f"{tp_units / 10**dec:,.4f} {sym}"
+
         return dict(
-            round_id=rid, state=state,
-            draw_ts=draw_ts, close_ts=close_ts,
-            sold=sold, start_id=start_id,
-            draw_str=ts(draw_ts), close_str=ts(close_ts),
+            round_id=rid,
+            state=state,
+            draw_ts=draw_ts,
+            close_ts=close_ts,
+            sold=sold,
+            start_id=start_id,
+            draw_str=ts(draw_ts),
+            close_str=ts(close_ts),
             price_units=tp_units,
-            price_str=f"{tp_units / 10**dec:,.4f} {sym}",
-            dec=dec, sym=sym,
+            price_str=price_str,
+            dec=dec,
+            sym=sym,
         )
     except Exception:
         return {}
@@ -978,9 +792,11 @@ def get_round_snap():
 def get_tickets_for_wallet(wallet_addr: str, lookback_blocks: int = 120_000):
     if not lotto_c:
         return []
+
     wallet_addr = Web3.to_checksum_address(wallet_addr)
     latest = int(w3.eth.block_number)
     frm = max(0, latest - int(lookback_blocks))
+
     out = []
     try:
         evs = lotto_c.events.TicketsBought.create_filter(
@@ -988,8 +804,10 @@ def get_tickets_for_wallet(wallet_addr: str, lookback_blocks: int = 120_000):
             to_block="latest",
             argument_filters={"buyer": wallet_addr}
         ).get_all_entries()
+
         for ev in evs:
             args = ev["args"]
+            # TicketsBought(roundId,buyer,qty,cost,firstTicketId,lastTicketId)
             out.append({
                 "round": int(args.get("roundId")),
                 "qty": int(args.get("qty")),
@@ -1005,118 +823,136 @@ def get_tickets_for_wallet(wallet_addr: str, lookback_blocks: int = 120_000):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DASHBOARD (wallet required)
+# DASHBOARD (only after wallet connect)
 # ─────────────────────────────────────────────────────────────────────────────
 snap  = get_snap()
 rsnap = get_round_snap()
 
 if wallet:
-    st.markdown('<span class="pill" style="font-size:11px;">DASHBOARD UNLOCKED</span>', unsafe_allow_html=True)
-    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
+    st.markdown(f"<div class='pill'>DASHBOARD UNLOCKED</div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
     pool = snap["c_usdt"]
-    sym  = snap["sym"]
+    sym = snap["sym"]
 
-    left, right = st.columns([1.1, 1], gap="large")
+    left, right = st.columns([1.15, 1], gap="large")
 
     with left:
-        st.markdown('<div class="glass">', unsafe_allow_html=True)
+        st.markdown('<div class="glass card-anim show">', unsafe_allow_html=True)
         st.markdown('<div class="glass-head">Live Round</div>', unsafe_allow_html=True)
+
         if not rsnap:
-            st.markdown('<div class="glass-body muted">Could not read round data — check ABI file.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="glass-body muted">Could not read round data (ABI missing or mismatch).</div>', unsafe_allow_html=True)
         else:
-            round_state_html = state_lbl_contract(rsnap.get("state", 0))
-            st.markdown(f"""
+            st.markdown(
+                f"""
 <div class="glass-body">
-  <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:900;color:var(--gold);margin-bottom:16px;">
-    Round #{rsnap.get("round_id")}
-  </div>
-  <div class="stat-row"><span class="stat-label">State</span><span class="stat-value">{round_state_html}</span></div>
-  <div class="stat-row"><span class="stat-label">Sales Close</span><span class="stat-value">{rsnap.get("close_str","N/A")}</span></div>
-  <div class="stat-row"><span class="stat-label">Next Draw</span><span class="stat-value">{rsnap.get("draw_str","N/A")}</span></div>
-  <div class="stat-row"><span class="stat-label">Ticket Price</span><span class="stat-value">{rsnap.get("price_str","N/A")}</span></div>
-  <div class="stat-row"><span class="stat-label">Tickets Sold</span><span class="stat-value">{rsnap.get("sold","—")}</span></div>
+  <div class="muted">Round</div>
+  <div style="font-size:20px;font-weight:950;margin-top:4px;">#{rsnap.get("round_id")}</div>
+  <div style="height:10px"></div>
+  <div><span class="muted">State:</span> <b>{state_lbl_contract(rsnap.get("state", 0))}</b></div>
+  <div><span class="muted">Sales Close:</span> <b>{rsnap.get("close_str","N/A")}</b></div>
+  <div><span class="muted">Next Draw:</span> <b>{rsnap.get("draw_str","N/A")}</b></div>
+  <div style="height:10px"></div>
+  <div><span class="muted">Ticket Price:</span> <b>{rsnap.get("price_str","N/A")}</b></div>
+  <div><span class="muted">Tickets Sold:</span> <b>{rsnap.get("sold","—")}</b></div>
 </div>
-""", unsafe_allow_html=True)
+""",
+                unsafe_allow_html=True
+            )
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown('<div class="glass">', unsafe_allow_html=True)
+        st.markdown('<div class="glass card-anim show">', unsafe_allow_html=True)
         st.markdown('<div class="glass-head">Prize Pool</div>', unsafe_allow_html=True)
-        st.markdown(f"""
+        st.markdown(
+            f"""
 <div class="glass-body">
-  <div class="muted">Total USDT in Contract</div>
-  <div class="pool-amount">{pool:,.2f}<span class="pool-sym">{sym}</span></div>
-  <div style="height:12px"></div>
-  <div class="stat-row"><span class="stat-label">Contract BNB</span><span class="stat-value">{snap["c_bnb"]:.6f}</span></div>
-  <div class="stat-row"><span class="stat-label">Admin BNB</span><span class="stat-value">{snap["a_bnb"]:.6f}</span></div>
-  <div class="stat-row"><span class="stat-label">Block</span><span class="stat-value">#{snap["block"]:,}</span></div>
+  <div class="muted">Total Pool (USDT in Contract)</div>
+  <div style="font-size:44px;font-weight:1000;color:#f5c400;line-height:1;margin-top:6px;">
+    {pool:,.2f} <span style="font-size:16px;color:rgba(233,238,247,.70)">{sym}</span>
+  </div>
+  <div style="height:10px"></div>
+  <div class="muted">Contract BNB</div>
+  <div style="font-weight:900">{snap["c_bnb"]:.6f}</div>
+  <div style="height:10px"></div>
+  <div class="muted">Admin BNB</div>
+  <div style="font-weight:900">{snap["a_bnb"]:.6f}</div>
 </div>
-""", unsafe_allow_html=True)
+""",
+            unsafe_allow_html=True
+        )
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
+    # ACTIONS
     a1, a2, a3 = st.columns([1.2, 1.2, 1.6], gap="small")
     with a1:
-        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-        st.button("Buy Tickets", key="dash_buy", on_click=lambda: st.session_state.update(ui_mode="buy"))
+        st.markdown('<div class="btn-gold">', unsafe_allow_html=True)
+        st.button("🟡 Buy Tickets", key="dash_buy", on_click=lambda: st.session_state.update(ui_mode="buy"))
         st.markdown("</div>", unsafe_allow_html=True)
     with a2:
-        st.button("My Tickets", key="dash_tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"))
+        st.button("🎟️ My Tickets", key="dash_tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"))
     with a3:
-        st.button("Refresh Dashboard", key="dash_refresh", on_click=do_refresh)
+        st.button("🔄 Refresh Dashboard", key="dash_refresh", on_click=do_refresh)
 
     st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 
-    # ── BUY PANEL ──
+    # BUY PANEL
     if st.session_state.ui_mode == "buy":
-        st.markdown('<div class="glass">', unsafe_allow_html=True)
+        st.markdown('<div class="glass card-anim show">', unsafe_allow_html=True)
         st.markdown('<div class="glass-head">Buy Tickets</div>', unsafe_allow_html=True)
 
         if not lotto_c:
-            st.markdown('<div class="glass-body muted">ABI not loaded. Add lotto_abi.json to the repo root.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="glass-body muted">ABI not loaded. Add lotto_abi.json in repo root.</div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
         elif is_manual:
-            st.markdown('<div class="glass-body">Read-only mode — connect MetaMask to purchase tickets.</div>', unsafe_allow_html=True)
-            st.button("Connect MetaMask", key="buy_mm", on_click=do_connect_metamask)
+            st.markdown('<div class="glass-body">Read-only mode. Switch to MetaMask to buy.</div>', unsafe_allow_html=True)
+            st.button("🦊 Connect MetaMask", key="buy_mm", on_click=do_connect_metamask)
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
             qty = st.number_input("Number of tickets", min_value=1, max_value=100, value=1, step=1, key="buy_qty")
+
             tp_units = rsnap.get("price_units")
             dec = rsnap.get("dec", snap["dec"])
             total_cost_units = int(tp_units) * int(qty) if tp_units is not None else None
 
             if total_cost_units is not None:
-                cost_display = total_cost_units / 10**dec
-                st.success(f"Total cost: {cost_display:,.4f} {snap['sym']}")
+                st.success(f"Total cost: {total_cost_units / 10**dec:,.4f} {snap['sym']}")
 
             if not HAS_JS:
-                st.error("Install streamlit-javascript to enable MetaMask transactions.")
+                st.error("Install `streamlit-javascript` to enable MetaMask transactions.")
+                st.markdown("</div>", unsafe_allow_html=True)
             elif total_cost_units is None:
-                st.error("Could not read ticket price from contract — check ABI.")
+                st.error("Could not read ticket price from contract (ABI mismatch).")
+                st.markdown("</div>", unsafe_allow_html=True)
             else:
-                st.markdown('<div class="glass-body muted" style="margin-bottom:10px;">MetaMask will prompt for USDT approval (if needed), then the ticket purchase.</div>', unsafe_allow_html=True)
-                label = f"Buy {int(qty)} Ticket{'s' if int(qty) > 1 else ''} via MetaMask"
-                st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-                if st.button(label, key="buy_btn"):
+                st.markdown("<div class='glass-body muted'>MetaMask will ask you to approve USDT (if needed) then buy tickets.</div>", unsafe_allow_html=True)
+                if st.button(f"🟡 Buy {int(qty)} Ticket{'s' if int(qty) > 1 else ''} via MetaMask", key="buy_btn"):
                     js = f"""
 async()=>{{
   try {{
-    if(!window.ethereum) return {{ok:false, err:"MetaMask not detected"}};
+    if(!window.ethereum) return {{ok:false, err:"no_metamask"}};
     const {{ethers}} = await import('https://cdn.ethers.io/lib/ethers-5.7.umd.min.js');
     const provider = new ethers.providers.Web3Provider(window.ethereum);
     await provider.send('eth_requestAccounts', []);
     const signer = provider.getSigner();
+
     const usdt = new ethers.Contract(
       '{USDT}',
       ['function approve(address,uint256) returns(bool)',
        'function allowance(address,address) view returns(uint256)'],
       signer
     );
+
     const lotto = new ethers.Contract(
       '{LOTTO_CONTRACT}',
       ['function buyTickets(uint256) external'],
       signer
     );
+
     const amt = ethers.BigNumber.from('{int(total_cost_units)}');
     const me = await signer.getAddress();
     const alw = await usdt.allowance(me, '{LOTTO_CONTRACT}');
@@ -1124,6 +960,7 @@ async()=>{{
       const tx1 = await usdt.approve('{LOTTO_CONTRACT}', amt);
       await tx1.wait();
     }}
+
     const tx2 = await lotto.buyTickets({int(qty)});
     await tx2.wait();
     return {{ok:true, hash: tx2.hash}};
@@ -1134,77 +971,75 @@ async()=>{{
 """
                     res = st_javascript(js)
                     if isinstance(res, dict) and res.get("ok"):
-                        st.success(f"Purchased! Tx: {res.get('hash')}")
-                        st.markdown(f"[View on BscScan](https://bscscan.com/tx/{res.get('hash')})")
+                        st.success(f"✅ Purchased! Tx: {res.get('hash')}")
+                        st.markdown(f"[🔍 View on BscScan](https://bscscan.com/tx/{res.get('hash')})")
                         st.cache_data.clear()
                     else:
-                        err = res.get("err") if isinstance(res, dict) else str(res)
-                        st.error(f"Transaction failed: {err}")
+                        st.error(f"❌ Failed: {(res.get('err') if isinstance(res, dict) else res)}")
+
                 st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # ── MY TICKETS PANEL ──
+    # MY TICKETS PANEL
     if st.session_state.ui_mode == "my_tickets":
-        st.markdown('<div class="glass">', unsafe_allow_html=True)
+        st.markdown('<div class="glass card-anim show">', unsafe_allow_html=True)
         st.markdown('<div class="glass-head">My Tickets</div>', unsafe_allow_html=True)
 
         if not lotto_c:
-            st.markdown(f"""
-<div class="glass-body">
-  <p class="muted">ABI not loaded — add lotto_abi.json to the repo root.</p>
-  <p>View events directly: <a href="https://bscscan.com/address/{LOTTO_CONTRACT}#events" target="_blank">BscScan Events &#x2197;</a></p>
-</div>
-""", unsafe_allow_html=True)
+            st.markdown('<div class="glass-body muted">ABI not loaded — add lotto_abi.json.</div>', unsafe_allow_html=True)
+            st.markdown(f"<div class='glass-body'>Events: <a href='https://bscscan.com/address/{LOTTO_CONTRACT}#events' target='_blank'>Open on BscScan ↗</a></div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            mode_label = "MetaMask" if is_mm else "Read-only"
-            st.markdown(f'<div class="glass-body muted">Wallet: {wallet} ({mode_label})</div>', unsafe_allow_html=True)
+            st.markdown(f"<div class='glass-body muted'>Wallet: {wallet} ({'MetaMask' if is_mm else 'Read-only'})</div>", unsafe_allow_html=True)
 
-            lookback = st.slider("Lookback blocks", min_value=10_000, max_value=300_000,
-                                 value=120_000, step=10_000, key="lb")
-
-            with st.spinner("Fetching your ticket purchases…"):
+            lookback = st.slider("Lookback blocks", min_value=10_000, max_value=300_000, value=120_000, step=10_000, key="lb")
+            with st.spinner("Fetching ticket purchases…"):
                 purchases = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
 
             if not purchases:
-                st.info("No TicketsBought events found in the selected block range.")
+                st.info("No TicketsBought events found in the selected lookback range.")
             else:
                 rounds = sorted({p["round"] for p in purchases}, reverse=True)
                 pick_round = st.selectbox("Round", rounds, index=0, key="pick_round")
+
                 subset = [p for p in purchases if p["round"] == pick_round]
+                st.markdown(f"<div class='glass-body'><b>{len(subset)}</b> purchase(s) found in Round <b>#{pick_round}</b></div>", unsafe_allow_html=True)
 
-                st.markdown(f'<div class="glass-body"><b>{len(subset)}</b> purchase(s) in Round <b>#{pick_round}</b></div>', unsafe_allow_html=True)
-
-                expand_small = st.checkbox("Show individual ticket numbers (qty ≤ 50)", value=False, key="expand")
+                expand_small = st.checkbox("Expand into individual ticket numbers (only if qty ≤ 50)", value=False, key="expand")
 
                 for p in subset:
-                    qty0  = int(p["qty"])
+                    qty0 = int(p["qty"])
                     start = int(p["start"])
-                    end   = int(p["end"])
-                    tx    = p["tx"]
-                    st.markdown(f"""
-<div class="ticket-entry">
-  <div class="ticket-round">Round #{p["round"]} &nbsp;·&nbsp; {qty0} ticket{"s" if qty0 != 1 else ""}</div>
-  <div class="ticket-meta">
-    Ticket IDs: <b>{start}</b> &#x2192; <b>{end}</b><br>
-    Tx: <a href="https://bscscan.com/tx/{tx}" target="_blank">{fmt_addr(tx)} &#x2197;</a>
+                    end = int(p["end"])
+                    tx = p["tx"]
+
+                    st.markdown(
+                        f"""
+<div style="margin-top:12px; padding:14px; border-radius:18px; border:1px solid rgba(245,196,0,.18); background: rgba(245,196,0,.06);">
+  <div style="font-weight:950;color:#f5c400;">Round #{p["round"]} · Qty: {qty0}</div>
+  <div class="muted" style="margin-top:6px;">
+    Tickets: <b>{start}</b> → <b>{end}</b><br/>
+    Tx: <a href="https://bscscan.com/tx/{tx}" target="_blank">{fmt_addr(tx)} ↗</a>
   </div>
 </div>
-""", unsafe_allow_html=True)
+""",
+                        unsafe_allow_html=True
+                    )
+
                     if expand_small and qty0 <= 50:
-                        st.code(", ".join(map(str, range(start, end + 1))))
+                        ids = list(range(start, end + 1))
+                        st.code(", ".join(map(str, ids)))
 
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Footer
-# ─────────────────────────────────────────────────────────────────────────────
-st.markdown(f"""
-<div class="footer">
-  LOTTO &nbsp;·&nbsp;
-  Contract <span>{fmt_addr(LOTTO_CONTRACT_ADDR)}</span> &nbsp;·&nbsp;
-  USDT <span>{fmt_addr(USDT_ADDRESS)}</span> &nbsp;·&nbsp;
-  Admin <span>{fmt_addr(ADMIN_WALLET)}</span>
+# Footer (always safe now)
+st.markdown(
+    f"""
+<div style="text-align:center; padding:26px 0 8px 0; color:rgba(233,238,247,.55); font-size:11px;">
+  LOTTO · Contract <span style="color:#f5c400;">{fmt_addr(LOTTO_CONTRACT_ADDR)}</span> ·
+  USDT <span style="color:#f5c400;">{fmt_addr(USDT_ADDRESS)}</span> ·
+  Admin <span style="color:#f5c400;">{fmt_addr(ADMIN_WALLET)}</span>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True
+)
