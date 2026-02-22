@@ -54,7 +54,7 @@ def connect_web3():
             w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 15}))
             if w.is_connected():
                 return w
-        except:
+        except Exception:
             pass
     return None
 
@@ -66,8 +66,12 @@ w3 = connect_web3()
 # ─────────────────────────────────────────
 if "wallet" not in st.session_state:
     st.session_state.wallet = None
+if "wallet_mode" not in st.session_state:
+    st.session_state.wallet_mode = None  # "metamask" | "manual"
 if "view" not in st.session_state:
     st.session_state.view = "landing"
+if "manual_wallet_input" not in st.session_state:
+    st.session_state.manual_wallet_input = ""
 
 
 # ─────────────────────────────────────────
@@ -81,16 +85,13 @@ st.markdown("""
     color:#ffffff;
 }
 
-.section{
-    padding:80px 0px;
-}
+.section{ padding:80px 0px; }
 
 .hero-title{
     font-size:52px;
     font-weight:900;
     color:#f5c400;
 }
-
 .hero-sub{
     font-size:20px;
     color:#ffffff;
@@ -105,91 +106,119 @@ st.markdown("""
     margin-top:40px;
     box-shadow: 0 0 60px rgba(245,196,0,.05);
 }
-
-.card h2{
-    color:#f5c400;
-    font-size:30px;
-    margin-bottom:20px;
-}
-
-.card p, .card li{
-    color:#ffffff;
-    font-size:17px;
-    line-height:1.8;
-}
-
-ul{
-    padding-left:20px;
-}
+.card h2{ color:#f5c400; font-size:30px; margin-bottom:20px; }
+.card p, .card li{ color:#ffffff; font-size:17px; line-height:1.8; }
+ul{ padding-left:20px; }
 
 .cta button{
-    background:#f5c400;
-    color:black;
-    font-weight:900;
-    border-radius:14px;
-    padding:12px 24px;
+    background:#f5c400 !important;
+    color:#000 !important;
+    font-weight:900 !important;
+    border-radius:14px !important;
+    padding:12px 24px !important;
+    border:0 !important;
 }
+.small-muted{ opacity:.75; font-size:13px; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────
-# Wallet Connect
+# Wallet Helpers
 # ─────────────────────────────────────────
-def connect_wallet():
+def _set_wallet(address: str, mode: str):
+    st.session_state.wallet = Web3.to_checksum_address(address)
+    st.session_state.wallet_mode = mode
+    st.session_state.view = "dashboard"
+
+def disconnect_wallet():
+    st.session_state.wallet = None
+    st.session_state.wallet_mode = None
+    st.session_state.view = "landing"
+
+def connect_wallet_metamask():
     if not HAS_JS:
-        st.error("MetaMask bridge not available.")
+        st.error("MetaMask bridge not available. Use manual address instead.")
         return
 
     js = """
-async()=>{
+async()=> {
   try{
-    if(!window.ethereum) return {ok:false};
+    if(!window.ethereum) return {ok:false, err:"no_ethereum"};
     const accounts = await window.ethereum.request({method:'eth_requestAccounts'});
-    return {ok:true, address: accounts[0]};
+    const chainId = await window.ethereum.request({method:'eth_chainId'});
+    return {ok:true, address: accounts[0], chainId};
   }catch(e){
-    return {ok:false};
+    return {ok:false, err: (e && e.message) ? e.message : "failed"};
   }
 }
 """
     result = st_javascript(js, key="wallet_connect_js")
 
-    if isinstance(result, dict) and result.get("ok"):
-        st.session_state.wallet = result["address"]
-        st.session_state.view = "dashboard"
+    if isinstance(result, dict) and result.get("ok") and result.get("address"):
+        addr = result["address"]
+        if Web3.is_address(addr):
+            _set_wallet(addr, "metamask")
+        else:
+            st.error("MetaMask returned an invalid address.")
     else:
-        st.error("Wallet connection failed.")
+        st.error("Wallet connection failed (MetaMask).")
 
-def disconnect_wallet():
-    st.session_state.wallet = None
-    st.session_state.view = "landing"
+def connect_wallet_manual():
+    addr = (st.session_state.manual_wallet_input or "").strip()
+    if not addr:
+        st.error("Paste a wallet address first.")
+        return
+    if not Web3.is_address(addr):
+        st.error("Invalid wallet address format.")
+        return
+    _set_wallet(addr, "manual")
 
 
 # ─────────────────────────────────────────
 # Navbar
 # ─────────────────────────────────────────
-left, right = st.columns([6,2])
+left, mid, right = st.columns([4,4,2], vertical_alignment="center")
 
 with left:
     st.markdown("### 🎰 LOTTO")
+
+with mid:
+    # Manual paste option always visible
+    st.text_input(
+        "Manual wallet address (read-only mode)",
+        key="manual_wallet_input",
+        placeholder="0x1234...abcd",
+        label_visibility="visible",
+    )
+    c1, c2 = st.columns([1,1], vertical_alignment="center")
+    with c1:
+        st.button("Use this address", on_click=connect_wallet_manual, key="btn_use_manual")
+    with c2:
+        if HAS_JS:
+            st.caption("MetaMask available ✅")
+        else:
+            st.caption("MetaMask not available ❌")
 
 with right:
     if st.session_state.wallet:
         st.button("Disconnect", on_click=disconnect_wallet, key="btn_disconnect")
     else:
-        st.button("Connect Wallet", on_click=connect_wallet, key="btn_connect")
+        st.button("Connect MetaMask", on_click=connect_wallet_metamask, key="btn_connect")
 
 
 # ─────────────────────────────────────────
 # Landing Page (Whitepaper)
 # ─────────────────────────────────────────
 def landing_page():
-
     st.markdown("""
     <div class="section">
         <div class="hero-title">Decentralized Lottery</div>
         <div class="hero-sub">
             Fully on-chain. Transparent. Auditable. Trustless.
+        </div>
+        <div class="small-muted">
+            Tip: You can connect via MetaMask or paste an address to view stats in read-only mode.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -197,9 +226,7 @@ def landing_page():
     st.markdown("""
     <div class="card">
         <h2>How It Works</h2>
-        <p>
-        Replace this text with your full whitepaper explanation of:
-        </p>
+        <p>Replace this text with your full whitepaper explanation of:</p>
         <ul>
             <li>Ticket pricing model</li>
             <li>Round lifecycle</li>
@@ -252,7 +279,11 @@ def landing_page():
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="section cta">', unsafe_allow_html=True)
-    st.button("🚀 Connect Wallet To Enter Lottery", on_click=connect_wallet, key="cta_connect")
+    c1, c2 = st.columns([1,1], vertical_alignment="center")
+    with c1:
+        st.button("🚀 Connect MetaMask To Enter Lottery", on_click=connect_wallet_metamask, key="cta_connect_mm")
+    with c2:
+        st.button("👁️ View with Pasted Address", on_click=connect_wallet_manual, key="cta_connect_manual")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -263,24 +294,25 @@ def dashboard():
     st.markdown("""
     <div class="section">
         <div class="hero-title">Dashboard</div>
-        <div class="hero-sub">
-            Wallet Connected
-        </div>
+        <div class="hero-sub">Wallet Connected</div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.write(f"Connected wallet: {st.session_state.wallet}")
+    mode = st.session_state.wallet_mode or "unknown"
+    st.write(f"Connected wallet: `{st.session_state.wallet}`")
+    st.caption(f"Mode: **{mode}** " + ("(manual = read-only)" if mode == "manual" else ""))
 
     if not w3:
         st.error("Cannot connect to BSC RPC.")
         return
 
+    if mode == "manual":
+        st.info("You’re in manual mode. You can view stats, but transactions (approve/buy) require MetaMask.")
+
     st.markdown("""
     <div class="card">
         <h2>Lottery Dashboard</h2>
-        <p>
-        Paste your previous on-chain dashboard UI here.
-        </p>
+        <p>Paste your previous on-chain dashboard UI here.</p>
     </div>
     """, unsafe_allow_html=True)
 
