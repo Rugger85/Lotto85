@@ -137,7 +137,7 @@ def donut(split: dict[str, float]):
 def glass_card(title: str, body_html: str, id_: str):
     st.markdown(
         f"""
-<div class="glass card-anim" id="{id_}">
+<div class="glass card-anim show" id="{id_}">
   <div class="glass-head">{title}</div>
   <div class="glass-body">{body_html}</div>
 </div>
@@ -403,8 +403,9 @@ div.stButton>button:hover{
 .sep{ height:1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); margin: 22px 0; }
 
 /* Scroll animation */
-.card-anim{ opacity: 0; transform: translateY(14px); transition: all .75s ease; }
-.card-anim.show{ opacity: 1; transform: translateY(0px); }
+/* Cards should ALWAYS be visible (Streamlit Cloud JS can be unreliable) */
+.card-anim{ opacity: 1; transform: none; transition: transform .25s ease, box-shadow .25s ease; }
+.card-anim:hover{ transform: translateY(-2px); }
 </style>
 
 <div id="particles-wrap"><canvas id="particles"></canvas></div>
@@ -460,16 +461,6 @@ div.stButton>button:hover{
   }
   resize(); init(); step();
   window.addEventListener('resize', () => { resize(); init(); });
-
-  const io = new IntersectionObserver((entries)=>{
-    entries.forEach(e=>{
-      if(e.isIntersecting) e.target.classList.add('show');
-    });
-  }, {threshold: 0.12});
-
-  setTimeout(()=>{
-    document.querySelectorAll('.card-anim').forEach(el=>io.observe(el));
-  }, 350);
 })();
 </script>
 """, unsafe_allow_html=True)
