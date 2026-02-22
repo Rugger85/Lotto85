@@ -1,723 +1,802 @@
-# app.py
-# ---------------------------------------
-# LOTTOLOTTERY (BSC Mainnet) Streamlit UI
-# MetaMask connect (if available) + Manual wallet input (read-only)
-# On-chain stats via Web3.py + USDT Transfer logs
-# ---------------------------------------
+from __future__ import annotations
 
-# -----------------------------
-# LOAD ENV FIRST
-# -----------------------------
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-
-NETWORK = os.getenv("NETWORK", "bsc")
-CHAIN_ID = int(os.getenv("CHAIN_ID", "56"))
-BSC_RPC = os.getenv("BSC_RPC", "").strip()
-LOTTO_CONTRACT_ADDR = os.getenv("LOTTO_CONTRACT", "").strip()
-USDT_ADDRESS = os.getenv("USDT_ADDRESS", "").strip()
-ADMIN_WALLET = os.getenv("ADMIN_WALLET", "").strip()
-LOTTO_ABI_PATH = os.getenv("LOTTO_ABI_PATH", "lotto_abi.json").strip()
-
-if not BSC_RPC:
-    raise ValueError("BSC_RPC not found in .env")
-if not LOTTO_CONTRACT_ADDR:
-    raise ValueError("LOTTO_CONTRACT not found in .env")
-if not USDT_ADDRESS:
-    raise ValueError("USDT_ADDRESS not found in .env")
-if not ADMIN_WALLET:
-    raise ValueError("ADMIN_WALLET not found in .env")
-
-# -----------------------------
-# Imports
-# -----------------------------
-import json
+import os, json
 from datetime import datetime, timezone
+
 import streamlit as st
 import plotly.graph_objects as go
 from web3 import Web3
-from web3.exceptions import BadFunctionCallOutput
 
-# Optional MetaMask bridge (browser-side JS). If not installed, app still works with manual wallet.
+# Optional local dev
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+# MetaMask JS bridge
 try:
     from streamlit_javascript import st_javascript
+    HAS_JS = True
 except Exception:
-    st_javascript = None
+    HAS_JS = False
 
-st.set_page_config(page_title="LOTTOLOTTERY", layout="wide")
 
-# -----------------------------
-# Web3 setup
-# -----------------------------
-w3 = Web3(Web3.HTTPProvider(BSC_RPC))
-if not w3.is_connected():
-    raise RuntimeError("Failed to connect to BSC RPC. Check BSC_RPC in .env.")
+# ─────────────────────────────────────────────────────────────────────────────
+# Streamlit setup
+# ─────────────────────────────────────────────────────────────────────────────
+st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 
-LOTTO_CONTRACT = Web3.to_checksum_address(LOTTO_CONTRACT_ADDR)
-USDT = Web3.to_checksum_address(USDT_ADDRESS)
-ADMIN = Web3.to_checksum_address(ADMIN_WALLET)
 
-# Minimal ERC20 ABI (balances + decimals/symbol)
-ERC20_ABI = [
-    {"constant": True, "inputs": [], "name": "decimals", "outputs": [{"name": "", "type": "uint8"}], "type": "function"},
-    {"constant": True, "inputs": [], "name": "symbol", "outputs": [{"name": "", "type": "string"}], "type": "function"},
-    {"constant": True, "inputs": [{"name": "account", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
+# ─────────────────────────────────────────────────────────────────────────────
+# Config (Streamlit Cloud: st.secrets, Local: .env)
+# ─────────────────────────────────────────────────────────────────────────────
+def cfg(key: str, default: str = "") -> str:
+    if key in st.secrets:
+        return str(st.secrets[key])
+    return os.getenv(key, default)
+
+CHAIN_ID            = int(cfg("CHAIN_ID", "56"))
+BSC_RPC_PRIMARY     = cfg("BSC_RPC", "")
+LOTTO_CONTRACT_ADDR = cfg("LOTTO_CONTRACT", "")
+USDT_ADDRESS        = cfg("USDT_ADDRESS", "")
+ADMIN_WALLET        = cfg("ADMIN_WALLET", "")
+LOTTO_ABI_PATH      = cfg("LOTTO_ABI_PATH", "lotto_abi.json")
+
+# Optional: add extra RPCs in secrets as BSC_RPC_2, BSC_RPC_3...
+RPCS = [BSC_RPC_PRIMARY]
+for k in ["BSC_RPC_2", "BSC_RPC_3", "BSC_RPC_4", "BSC_RPC_5"]:
+    v = cfg(k, "")
+    if v:
+        RPCS.append(v)
+
+# Public fallbacks (helpful on Streamlit Cloud)
+RPCS += [
+    "https://bsc-dataseed.binance.org/",
+    "https://bsc-dataseed1.binance.org/",
+    "https://bsc-dataseed2.binance.org/",
+    "https://bsc-dataseed3.binance.org/",
 ]
 
-usdt_contract = w3.eth.contract(address=USDT, abi=ERC20_ABI)
+missing = [k for k, v in {
+    "LOTTO_CONTRACT": LOTTO_CONTRACT_ADDR,
+    "USDT_ADDRESS": USDT_ADDRESS,
+    "ADMIN_WALLET": ADMIN_WALLET,
+}.items() if not v]
 
-# Load Lotto ABI (full artifact OR abi-array only)
+if missing:
+    st.error(
+        "Missing required config. Add these in Streamlit Cloud Secrets:\n\n"
+        + ", ".join(missing)
+    )
+    st.stop()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Web3 connect (with RPC fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+def connect_web3() -> tuple[Web3 | None, str | None]:
+    for rpc in RPCS:
+        if not rpc:
+            continue
+        try:
+            w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 20}))
+            if w.is_connected():
+                return w, rpc
+        except Exception:
+            pass
+    return None, None
+
+w3, ACTIVE_RPC = connect_web3()
+if not w3:
+    st.error("Cannot connect to BSC RPC (all endpoints failed). Add a paid RPC in Secrets for stability.")
+    st.stop()
+
+LOTTO_CONTRACT = Web3.to_checksum_address(LOTTO_CONTRACT_ADDR)
+USDT           = Web3.to_checksum_address(USDT_ADDRESS)
+ADMIN          = Web3.to_checksum_address(ADMIN_WALLET)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ABIs
+# ─────────────────────────────────────────────────────────────────────────────
+ERC20_ABI = [
+    {"constant": True, "inputs": [], "name": "decimals", "outputs": [{"name": "", "type": "uint8"}], "type": "function"},
+    {"constant": True, "inputs": [], "name": "symbol",   "outputs": [{"name": "", "type": "string"}], "type": "function"},
+    {"constant": True, "inputs": [{"name": "a", "type": "address"}], "name": "balanceOf",
+     "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
+    {"constant": True, "inputs": [{"name": "o", "type": "address"}, {"name": "s", "type": "address"}], "name": "allowance",
+     "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
+]
+
+usdt_c = w3.eth.contract(address=USDT, abi=ERC20_ABI)
+
 LOTTO_ABI = None
 if os.path.exists(LOTTO_ABI_PATH):
     try:
-        with open(LOTTO_ABI_PATH, "r", encoding="utf-8") as f:
-            abi_json = json.load(f)
-            LOTTO_ABI = abi_json.get("abi", abi_json)
+        raw = json.load(open(LOTTO_ABI_PATH, "r", encoding="utf-8"))
+        LOTTO_ABI = raw.get("abi", raw)
     except Exception:
         LOTTO_ABI = None
 
-lotto_contract = w3.eth.contract(address=LOTTO_CONTRACT, abi=LOTTO_ABI) if LOTTO_ABI else None
+lotto_c = w3.eth.contract(address=LOTTO_CONTRACT, abi=LOTTO_ABI) if LOTTO_ABI else None
 
-# -----------------------------
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Helpers
-# -----------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 def fmt_addr(a: str) -> str:
-    a = str(a or "")
-    return a[:6] + "..." + a[-4:] if a.startswith("0x") and len(a) > 10 else a
+    a = str(a)
+    return a[:6] + "…" + a[-4:] if a.startswith("0x") and len(a) > 10 else a
 
-def wei_to_bnb(wei: int) -> float:
-    return float(wei) / 1e18
-
-def token_to_float(raw: int, decimals: int) -> float:
-    return float(raw) / float(10 ** int(decimals))
-
-def safe_call(fn, default=None):
+def safe(fn, default=None):
     try:
         return fn()
-    except (BadFunctionCallOutput, ValueError, Exception):
+    except Exception:
         return default
 
-def padded_topic_address(addr: str) -> str:
-    return "0x" + "0" * 24 + addr.lower().replace("0x", "")
+def tok(raw: int, dec: int) -> float:
+    return float(raw) / (10 ** dec)
 
-def _fmt_dt(ts: int) -> str:
-    if not ts or int(ts) <= 0:
+def bnb(raw: int) -> float:
+    return float(raw) / 1e18
+
+def ts(t: int | None) -> str:
+    if not t or int(t) <= 0:
         return "N/A"
     try:
-        return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%b %d, %Y %H:%M UTC")
+        return datetime.fromtimestamp(int(t), tz=timezone.utc).strftime("%b %d, %Y %H:%M UTC")
     except Exception:
         return "N/A"
 
-def _state_text(state: int) -> str:
-    mapping = {0: "Pending", 1: "Live", 2: "Sales Closed", 3: "Drawn"}
-    return mapping.get(int(state), f"State {int(state)}")
+# Your contract enum:
+# enum RoundState { OPEN, SALES_CLOSED, DRAWN }
+def state_lbl(s: int) -> str:
+    return {0: "🟢 Open", 1: "🔒 Sales Closed", 2: "🎉 Drawn"}.get(int(s), f"State {s}")
 
-def build_snapshot(w3, lotto_contract):
-    """
-    Reads Lotto contract round fields + ticketPrice (requires LOTTO_ABI).
-    Returns empty dict if ABI missing / call fails.
-    """
-    snap = {}
-    if not lotto_contract:
-        return snap
+def pad_topic_addr(addr: str) -> str:
+    return "0x" + "0" * 24 + addr.lower().replace("0x", "")
+
+def donut(split: dict[str, float]):
+    fig = go.Figure(go.Pie(labels=list(split.keys()), values=list(split.values()), hole=0.68, sort=False, textinfo="none"))
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=210, showlegend=False)
+    return fig
+
+def countdown_label(target_ts: int) -> str:
+    now = int(datetime.now(timezone.utc).timestamp())
+    if target_ts <= 0:
+        return "N/A"
+    d = target_ts - now
+    if d <= 0:
+        return "Now"
+    days = d // 86400
+    hrs  = (d % 86400) // 3600
+    mins = (d % 3600) // 60
+    return f"{days}d {hrs}h {mins}m"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cacheable on-chain snapshots
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=15)
+def get_snap():
+    dec   = int(safe(lambda: usdt_c.functions.decimals().call(), 18))
+    sym   = safe(lambda: usdt_c.functions.symbol().call(), "USDT")
+
+    c_raw = int(safe(lambda: usdt_c.functions.balanceOf(LOTTO_CONTRACT).call(), 0))
+    a_raw = int(safe(lambda: usdt_c.functions.balanceOf(ADMIN).call(), 0))
+
+    c_bnb = int(safe(lambda: w3.eth.get_balance(LOTTO_CONTRACT), 0))
+    a_bnb = int(safe(lambda: w3.eth.get_balance(ADMIN), 0))
+
+    blk   = int(w3.eth.block_number)
+
+    # Recent inbound USDT transfers to contract (last ~5000 blocks)
+    logs = []
+    try:
+        topic0 = Web3.keccak(text="Transfer(address,address,uint256)").hex()
+        rls = list(reversed(w3.eth.get_logs({
+            "fromBlock": max(0, blk - 5000),
+            "toBlock": blk,
+            "address": USDT,
+            "topics": [topic0, None, pad_topic_addr(LOTTO_CONTRACT)],
+        })))[:10]
+
+        for lg in rls:
+            logs.append({
+                "block": int(lg["blockNumber"]),
+                "tx": lg["transactionHash"].hex(),
+                "from": Web3.to_checksum_address("0x" + lg["topics"][1].hex()[-40:]),
+                "amount": tok(int(lg["data"], 16), dec),
+                "symbol": sym
+            })
+    except Exception:
+        pass
+
+    return dict(
+        block=blk,
+        dec=dec,
+        sym=sym,
+        c_usdt=tok(c_raw, dec),
+        a_usdt=tok(a_raw, dec),
+        c_bnb=bnb(c_bnb),
+        a_bnb=bnb(a_bnb),
+        logs=logs
+    )
+
+@st.cache_data(ttl=15)
+def get_round_snap():
+    if not lotto_c:
+        return {}
 
     try:
-        cr = lotto_contract.functions.currentRound().call()
-        # (state, drawTimestamp, salesCloseTimestamp, ticketsSold, startTicketId, commitHash)
-        snap["round_state"] = int(cr[0])
-        snap["draw_ts"] = int(cr[1])
-        snap["sales_close_ts"] = int(cr[2])
-        snap["tickets_sold"] = int(cr[3])
-        snap["start_ticket_id"] = int(cr[4])
-        snap["draw_human"] = _fmt_dt(snap["draw_ts"])
-        snap["sales_close_human"] = _fmt_dt(snap["sales_close_ts"])
-        snap["round_state_text"] = _state_text(snap["round_state"])
+        rid = safe(lambda: int(lotto_c.functions.roundId().call()))
+        cr  = lotto_c.functions.currentRound().call()
 
-        try:
-            snap["round_id"] = int(lotto_contract.functions.roundId().call())
-        except Exception:
-            snap["round_id"] = None
+        state     = int(cr[0]) if len(cr) > 0 else 0
+        draw_ts   = int(cr[1]) if len(cr) > 1 else 0
+        close_ts  = int(cr[2]) if len(cr) > 2 else 0
+        sold      = int(cr[3]) if len(cr) > 3 else 0
+        start_id  = int(cr[4]) if len(cr) > 4 else None
 
-        # USDT meta (prefer lotto.usdt() if available)
-        usdt_decimals = None
-        usdt_symbol = None
+        dec = None
+        sym = None
         try:
-            usdt_addr = lotto_contract.functions.usdt().call()
-            _u = w3.eth.contract(address=Web3.to_checksum_address(usdt_addr), abi=[
-                {"constant": True, "inputs": [], "name": "decimals", "outputs": [{"name": "", "type": "uint8"}], "type": "function"},
-                {"constant": True, "inputs": [], "name": "symbol", "outputs": [{"name": "", "type": "string"}], "type": "function"},
-            ])
-            usdt_decimals = safe_call(lambda: _u.functions.decimals().call(), None)
-            usdt_symbol = safe_call(lambda: _u.functions.symbol().call(), None)
+            uaddr = lotto_c.functions.usdt().call()
+            um = w3.eth.contract(address=uaddr, abi=ERC20_ABI)
+            dec = int(um.functions.decimals().call())
+            sym = str(um.functions.symbol().call())
         except Exception:
             pass
 
-        if usdt_decimals is None:
-            usdt_decimals = safe_call(lambda: usdt_contract.functions.decimals().call(), 18)
-        if usdt_symbol is None:
-            usdt_symbol = safe_call(lambda: usdt_contract.functions.symbol().call(), "USDT")
+        tp_units = safe(lambda: int(lotto_c.functions.ticketPrice().call()))
+        price_str = "N/A"
+        if tp_units is not None:
+            d = dec if dec is not None else get_snap()["dec"]
+            s = sym if sym is not None else get_snap()["sym"]
+            price_str = f"{tp_units / 10**d:,.4f} {s}"
 
-        snap["usdt_decimals"] = int(usdt_decimals)
-        snap["usdt_symbol"] = str(usdt_symbol)
-
-        # ticketPrice()
-        try:
-            ticket_units = int(lotto_contract.functions.ticketPrice().call())
-            snap["ticket_price_units"] = ticket_units
-            denom = 10 ** int(snap["usdt_decimals"])
-            snap["ticket_price_human"] = f"{ticket_units / denom:,.6f} {snap['usdt_symbol']}"
-        except Exception:
-            snap["ticket_price_units"] = None
-            snap["ticket_price_human"] = "N/A"
-
-        return snap
+        return dict(
+            round_id=rid,
+            state=state,
+            draw_ts=draw_ts,
+            close_ts=close_ts,
+            sold=sold,
+            start_id=start_id,
+            draw_str=ts(draw_ts),
+            close_str=ts(close_ts),
+            price_units=tp_units,
+            price_str=price_str,
+            dec=dec if dec is not None else get_snap()["dec"],
+            sym=sym if sym is not None else get_snap()["sym"],
+        )
     except Exception:
-        return snap
+        return {}
 
-# -----------------------------
-# Cache on-chain reads
-# -----------------------------
-@st.cache_data(ttl=15)
-def get_chain_snapshot(lookback_blocks: int = 5000, max_logs: int = 15):
-    usdt_decimals = safe_call(lambda: usdt_contract.functions.decimals().call(), 18)
-    usdt_symbol = safe_call(lambda: usdt_contract.functions.symbol().call(), "USDT")
+@st.cache_data(ttl=60)
+def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
+    """
+    Reads TicketsBought events for wallet; returns list of purchases:
+    [{round, qty, firstTicketId, lastTicketId, tx, block}]
+    """
+    if not lotto_c:
+        return []
 
-    contract_usdt_raw = safe_call(lambda: usdt_contract.functions.balanceOf(LOTTO_CONTRACT).call(), 0)
-    admin_usdt_raw = safe_call(lambda: usdt_contract.functions.balanceOf(ADMIN).call(), 0)
+    wallet = Web3.to_checksum_address(wallet)
+    latest = int(w3.eth.block_number)
+    frm = max(0, latest - int(lookback_blocks))
 
-    contract_bnb_wei = safe_call(lambda: w3.eth.get_balance(LOTTO_CONTRACT), 0)
-    admin_bnb_wei = safe_call(lambda: w3.eth.get_balance(ADMIN), 0)
-
-    contract_usdt = token_to_float(contract_usdt_raw, usdt_decimals)
-    admin_usdt = token_to_float(admin_usdt_raw, usdt_decimals)
-
-    latest_block = w3.eth.block_number
-    from_block = max(0, latest_block - int(lookback_blocks))
-
-    transfer_topic0 = Web3.keccak(text="Transfer(address,address,uint256)").hex()
-    to_topic = padded_topic_address(LOTTO_CONTRACT)
-
-    logs = []
+    out = []
     try:
-        raw_logs = w3.eth.get_logs({
-            "fromBlock": from_block,
-            "toBlock": latest_block,
-            "address": USDT,
-            "topics": [transfer_topic0, None, to_topic],
-        })
-        raw_logs = list(reversed(raw_logs))[: max_logs]
-        for lg in raw_logs:
-            txh = lg["transactionHash"].hex()
-            blk = lg["blockNumber"]
-            from_addr = "0x" + lg["topics"][1].hex()[-40:]
-            to_addr = "0x" + lg["topics"][2].hex()[-40:]
-            value_raw = int(lg["data"], 16)
-            value = token_to_float(value_raw, usdt_decimals)
+        evs = lotto_c.events.TicketsBought.create_filter(
+            from_block=frm,
+            to_block="latest",
+            argument_filters={"buyer": wallet}
+        ).get_all_entries()
 
-            logs.append({
-                "block": int(blk),
-                "tx": txh,
-                "from": Web3.to_checksum_address(from_addr),
-                "to": Web3.to_checksum_address(to_addr),
-                "amount": float(value),
-                "symbol": str(usdt_symbol),
+        for ev in evs:
+            args = ev["args"]
+            out.append({
+                "round": int(args["roundId"]),
+                "qty": int(args["qty"]),
+                "first": int(args["firstTicketId"]),
+                "last": int(args["lastTicketId"]),
+                "tx": ev["transactionHash"].hex(),
+                "block": int(ev["blockNumber"]),
             })
+        out.sort(key=lambda x: x["block"], reverse=True)
+        return out
     except Exception:
-        logs = []
+        return []
 
-    # Lotto-specific (if ABI exists): use build_snapshot() (more reliable than guessing names)
-    lotto_snap = build_snapshot(w3, lotto_contract) if lotto_contract else {}
 
-    return {
-        "latest_block": int(latest_block),
-        "from_block": int(from_block),
-        "usdt_decimals": int(usdt_decimals),
-        "usdt_symbol": str(usdt_symbol),
-        "contract_usdt": float(contract_usdt),
-        "admin_usdt": float(admin_usdt),
-        "contract_bnb": float(wei_to_bnb(contract_bnb_wei)),
-        "admin_bnb": float(wei_to_bnb(admin_bnb_wei)),
-        "logs": logs,
-        "lotto": lotto_snap,
-    }
+# ─────────────────────────────────────────────────────────────────────────────
+# Session state
+# ─────────────────────────────────────────────────────────────────────────────
+for k, v in dict(
+    wallet=None,
+    wallet_type=None,   # "metamask" / "manual"
+    show_manual=False,
+    manual_input="",
+    ui_mode="home",
+    buy_qty=1,
+    tx_status=None,
+    tx_value=None,
+).items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-def donut_figure(split: dict):
-    labels = list(split.keys())
-    values = list(split.values())
 
-    fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=0.72, sort=False, textinfo="none")])
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=240,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
-    )
-    return fig
+# ─────────────────────────────────────────────────────────────────────────────
+# Wallet connect callbacks
+# ─────────────────────────────────────────────────────────────────────────────
+def open_manual():
+    st.session_state.show_manual = True
 
-# -----------------------------
-# CSS (fixes: button colors, panel sizing, no overflow)
-# -----------------------------
-st.markdown(
-    """
-<style>
-/* Background */
-.stApp {
-  background: radial-gradient(1200px 600px at 20% 20%, rgba(245,196,0,0.10), transparent 55%),
-              radial-gradient(900px 500px at 80% 30%, rgba(245,196,0,0.08), transparent 60%),
-              linear-gradient(180deg, #05070c 0%, #070a0f 35%, #05070c 100%);
-  color: #e9eef7;
-}
+def close_manual():
+    st.session_state.show_manual = False
+    st.session_state.manual_input = ""
 
-/* Remove Streamlit chrome */
-#MainMenu {visibility: hidden;}
-header {visibility: hidden;}
-footer {visibility: hidden;}
-div.block-container {padding-top: 1.2rem; padding-bottom: 2.2rem;}
+def do_disconnect():
+    for k in ["wallet", "wallet_type", "tx_status", "tx_value"]:
+        st.session_state[k] = None
+    close_manual()
 
-/* Width */
-.maxw { max-width: 1180px; margin: 0 auto; }
-
-/* Navbar */
-.navbar {
-  position: sticky; top: 0; z-index: 50;
-  backdrop-filter: blur(10px);
-  background: rgba(6, 8, 14, 0.55);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 16px;
-  padding: 12px 16px;
-  margin: 0 auto 18px auto;
-}
-.navrow { display:flex; align-items:center; justify-content:space-between; gap: 12px; }
-.brand { display:flex; align-items:center; gap: 10px; font-weight: 900; letter-spacing: 0.2px; }
-.badge {
-  display:inline-flex; align-items:center; justify-content:center;
-  width: 28px; height: 28px;
-  font-size: 12px; color: #0b0f18; background: #f5c400;
-  border-radius: 999px; font-weight: 950;
-}
-.navlinks { display:flex; align-items:center; gap: 14px; color: rgba(233,238,247,0.88); font-size: 13px; flex-wrap: wrap; }
-
-/* Hero */
-.heroTag {
-  display:inline-flex; align-items:center; gap: 8px;
-  background: rgba(245,196,0,0.10);
-  color: rgba(245,196,0,0.95);
-  border: 1px solid rgba(245,196,0,0.22);
-  padding: 6px 10px; border-radius: 999px;
-  font-size: 12px; font-weight: 900;
-}
-.h1 { font-size: 54px; line-height: 1.05; margin: 14px 0 10px 0; font-weight: 950; letter-spacing: 0.6px; }
-.h1 .gold { color: #f5c400; text-shadow: 0 10px 45px rgba(245,196,0,0.18); }
-.p { color: rgba(233,238,247,0.70); font-size: 14px; line-height: 1.6; max-width: 520px; }
-
-/* Cards */
-.glow {
-  border-radius: 18px; padding: 18px;
-  background: linear-gradient(180deg, rgba(18,22,34,0.75), rgba(12,16,26,0.75));
-  border: 1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.03) inset,
-              0 40px 120px rgba(0,0,0,0.55),
-              0 0 80px rgba(245,196,0,0.08);
-}
-.cardTitle { color: rgba(233,238,247,0.60); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 900; }
-.bigMoney { font-size: 44px; font-weight: 950; margin-top: 6px; }
-
-.miniGrid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
-.miniBox {
-  background: rgba(6,8,14,0.55);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px;
-  padding: 12px;
-}
-.miniLabel { font-size: 11px; color: rgba(233,238,247,0.60); }
-.miniValue { font-size: 18px; font-weight: 950; margin-top: 4px; }
-
-hr.soft {
-  border: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
-  margin: 26px 0;
-}
-
-.sectionTitle { text-align:center; font-weight: 950; letter-spacing: 0.6px; margin-top: 8px; }
-.sectionSub { text-align:center; color: rgba(233,238,247,0.60); font-size: 12px; max-width: 700px; margin: 6px auto 0 auto; }
-
-/* Make Streamlit buttons match theme (fixes white buttons) */
-div.stButton > button {
-  width: 100%;
-  border-radius: 10px !important;
-  font-weight: 900 !important;
-  border: 1px solid rgba(255,255,255,0.16) !important;
-  background: rgba(6,8,14,0.35) !important;
-  color: rgba(233,238,247,0.92) !important;
-}
-div.stButton > button:hover {
-  border-color: rgba(245,196,0,0.65) !important;
-  box-shadow: 0 10px 30px rgba(245,196,0,0.10) !important;
-}
-div.stButton > button:focus { outline: none !important; }
-
-/* Yellow primary button helper */
-.primaryBtn div.stButton > button {
-  background: #f5c400 !important;
-  color: #0b0f18 !important;
-  border: 0 !important;
-  box-shadow: 0 10px 30px rgba(245,196,0,0.18) !important;
-}
-
-/* Fix bordered containers to look like your panels */
-div[data-testid="stVerticalBlockBorderWrapper"]{
-  border-radius: 16px !important;
-  background: linear-gradient(180deg, rgba(18,22,34,0.72), rgba(12,16,26,0.72)) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  box-shadow: 0 30px 100px rgba(0,0,0,0.45) !important;
-}
-
-/* Prevent plotly overflow */
-.js-plotly-plot, .plot-container { max-width: 100% !important; overflow: hidden !important; }
-
-.smallMuted { color: rgba(233,238,247,0.55); font-size: 12px; }
-@media (max-width: 1100px) { .h1 { font-size: 44px; } }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-# -----------------------------
-# Session state (UI + wallet)
-# -----------------------------
-if "ui_mode" not in st.session_state:
-    st.session_state.ui_mode = "home"  # home | buy | my_tickets
-if "wallet" not in st.session_state:
-    st.session_state.wallet = ""       # active wallet checksum address
-if "wallet_mode" not in st.session_state:
-    st.session_state.wallet_mode = "manual"  # manual | metamask
-
-def short_addr(a: str) -> str:
-    if not a:
-        return "Not connected"
-    return f"{a[:6]}...{a[-4:]}"
-
-def connect_wallet_metamask():
-    """
-    Prompts MetaMask and returns:
-      - address string
-      - "__NO_METAMASK__" if not detected
-      - "__REJECTED__" if rejected
-      - "__NO_ACCOUNT__" if no account returned
-    """
-    if not st_javascript:
-        return "__NO_METAMASK__"
+def do_connect_metamask():
+    if not HAS_JS:
+        st.session_state.show_manual = True
+        st.session_state.tx_status = "no_js"
+        return
 
     res = st_javascript("""
-    async () => {
-      try {
-        if (!window.ethereum) return "__NO_METAMASK__";
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        return (accounts && accounts.length) ? accounts[0] : "__NO_ACCOUNT__";
-      } catch (e) {
-        return "__REJECTED__";
-      }
-    }
-    """)
-    return res
+async () => {
+  try {
+    if (!window.ethereum) return {ok:false, err:"no_metamask"};
+    const a = await window.ethereum.request({method:'eth_requestAccounts'});
+    return {ok:true, address: a && a.length ? a[0] : null};
+  } catch(e) {
+    return {ok:false, err: e && e.message ? e.message : String(e)};
+  }
+}
+""", key="js_connect_metamask")
 
-# -----------------------------
-# Refresh / pull chain data
-# -----------------------------
-topbar = st.columns([1, 5])
-with topbar[0]:
-    if st.button("🔄 Refresh on-chain stats", key="refresh"):
-        st.cache_data.clear()
-
-snap = get_chain_snapshot()
-lotto_snap = snap.get("lotto", {}) or {}
-LOTTO_ABI_LOADED = bool(lotto_contract)
-
-# Prize split
-PRIZE_SPLIT = {"1st Prize": 40, "2nd Prize": 25, "3rd Prize": 15, "Admin Fee": 20}
-
-# -----------------------------
-# Wrapper start
-# -----------------------------
-st.markdown('<div class="maxw">', unsafe_allow_html=True)
-
-# -----------------------------
-# Navbar (NO duplicate connect buttons)
-# -----------------------------
-network_badge = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
-wallet_display = fmt_addr(st.session_state.wallet) if st.session_state.wallet else "Not connected"
-
-st.markdown(
-    f"""
-<div class="navbar">
-  <div class="navrow">
-    <div class="brand">
-      <div class="badge">🟡</div>
-      <div>LOTTOLOTTERY</div>
-    </div>
-    <div class="navlinks">
-      <span>{network_badge}</span>
-      <span style="opacity:0.6;">|</span>
-      <span style="opacity:0.9;">Wallet: {wallet_display}</span>
-      <span style="opacity:0.6;">|</span>
-      <span style="opacity:0.9;">Admin: {fmt_addr(ADMIN)}</span>
-    </div>
-  </div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
-
-# -----------------------------
-# Wallet controls (MetaMask + Manual)  ✅ gives you a field to paste address
-# -----------------------------
-c1, c2, c3 = st.columns([1.2, 2.4, 1.4], gap="small")
-
-with c1:
-    st.session_state.wallet_mode = st.radio(
-        "Wallet mode",
-        ["manual", "metamask"],
-        horizontal=True,
-        label_visibility="collapsed",
-        index=0 if st.session_state.wallet_mode == "manual" else 1,
-        key="wallet_mode_radio",
-    )
-
-with c2:
-    if st.session_state.wallet_mode == "manual":
-        entered = st.text_input(
-            "Wallet address",
-            value=st.session_state.wallet or "",
-            placeholder="Paste wallet address (0x...) for read-only mode",
-            label_visibility="collapsed",
-            key="manual_wallet_input",
-        ).strip()
-        if entered:
-            if Web3.is_address(entered):
-                st.session_state.wallet = Web3.to_checksum_address(entered)
-            else:
-                st.error("Invalid wallet address. Must start with 0x and be 42 chars.")
+    if isinstance(res, dict) and res.get("ok") and res.get("address"):
+        st.session_state.wallet = res["address"]
+        st.session_state.wallet_type = "metamask"
+        st.session_state.show_manual = False
     else:
-        st.caption("MetaMask must be installed/enabled in THIS browser profile (try http://localhost:8501).")
+        st.session_state.tx_status = "mm_fail"
+        st.session_state.tx_value = (res.get("err") if isinstance(res, dict) else "Unknown error")
 
-with c3:
-    if st.session_state.wallet_mode == "metamask":
-        st.markdown('<div class="primaryBtn">', unsafe_allow_html=True)
-        clicked = st.button("🔗 Connect Wallet", key="mm_connect_btn")
-        st.markdown("</div>", unsafe_allow_html=True)
-        if clicked:
-            res = connect_wallet_metamask()
-            if res == "__NO_METAMASK__":
-                st.warning("MetaMask not detected. Install/enable the extension (try Chrome or Opera profile with MetaMask).")
-            elif res == "__REJECTED__":
-                st.warning("Connection rejected in MetaMask.")
-            elif res == "__NO_ACCOUNT__" or not res:
-                st.warning("No account returned from MetaMask.")
-            else:
-                st.session_state.wallet = Web3.to_checksum_address(res)
-    else:
-        st.markdown('<div class="smallMuted" style="text-align:right; padding-top:8px;">Read-only mode</div>', unsafe_allow_html=True)
+def submit_manual():
+    raw = (st.session_state.get("manual_input") or "").strip()
+    if not raw:
+        st.session_state.tx_status = "manual_empty"
+        return
+    try:
+        st.session_state.wallet = Web3.to_checksum_address(raw)
+        st.session_state.wallet_type = "manual"
+        st.session_state.show_manual = False
+        st.session_state.manual_input = ""
+        st.session_state.tx_status = "manual_ok"
+    except Exception:
+        st.session_state.tx_status = "manual_bad"
 
-# -----------------------------
-# Hero + Stats
-# -----------------------------
-left, right = st.columns([1.15, 1], gap="large")
 
-with left:
-    # Round label
-    round_tag = "● ROUND LIVE" if LOTTO_ABI_LOADED else "● ROUND (ABI REQUIRED)"
-    st.markdown(f'<div class="heroTag">{round_tag}</div>', unsafe_allow_html=True)
+# ─────────────────────────────────────────────────────────────────────────────
+# UI styling (minimal)
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+#MainMenu, header, footer, [data-testid="stToolbar"], [data-testid="stStatusWidget"] {display:none!important;}
+[data-testid="stAppViewContainer"]{
+  background: radial-gradient(ellipse 1100px 550px at 12% 16%,rgba(245,196,0,.06) 0%,transparent 55%),
+              linear-gradient(180deg,#06080d 0%,#07090f 100%) !important;
+  color: #e9eef7 !important;
+}
+.card{
+  background: rgba(15,19,31,.85);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  padding: 16px;
+}
+.pill{
+  display:inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(245,196,0,.12);
+  border: 1px solid rgba(245,196,0,.28);
+  color: #f5c400;
+  font-size: 11px;
+  font-weight: 800;
+}
+.muted{ color: rgba(233,238,247,.55); }
+.big{ font-size: 40px; font-weight: 900; color:#f5c400; line-height:1; }
+.hdiv{ height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.10),transparent); margin:18px 0; }
+.btnrow div.stButton>button{ width:100%; border-radius:12px; font-weight:800; }
+</style>
+""", unsafe_allow_html=True)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Load data
+# ─────────────────────────────────────────────────────────────────────────────
+snap  = get_snap()
+rsnap = get_round_snap()
+
+sym = snap["sym"]
+pool = snap["c_usdt"]
+wallet = st.session_state.wallet
+is_mm = st.session_state.wallet_type == "metamask"
+is_manual = st.session_state.wallet_type == "manual"
+
+net_badge = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
+abi_txt = "✅ ABI Loaded" if lotto_c else "⚠️ ABI not loaded (add lotto_abi.json)"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Navbar
+# ─────────────────────────────────────────────────────────────────────────────
+l, m, r = st.columns([1.4, 3.5, 1.7], gap="small")
+
+with l:
+    st.markdown("### 🎰 LOTTO")
+with m:
     st.markdown(
-        f"""
-<div class="h1">
-  DECENTRALIZED<br/>
-  <span class="gold">WEALTH DISTRIBUTION</span>
-</div>
-<div class="p">
-BSC on-chain prize pool is tracked live via USDT balance of the Lotto contract. All transfers are visible and auditable.
-</div>
-""",
-        unsafe_allow_html=True,
+        f'<div class="muted">'
+        f'<span class="pill">{net_badge}</span> &nbsp;'
+        f'Block: <b>{snap["block"]:,}</b> &nbsp;·&nbsp; '
+        f'Admin: <b>{fmt_addr(ADMIN)}</b> &nbsp;·&nbsp; '
+        f'Wallet: <b>{"Not connected" if not wallet else fmt_addr(wallet)}</b>'
+        f'</div>',
+        unsafe_allow_html=True
     )
+with r:
+    if not wallet:
+        c1, c2 = st.columns(2, gap="small")
+        with c1:
+            st.button("🔗 Connect", on_click=do_connect_metamask, key="nav_connect")
+        with c2:
+            st.button("✏️ Manual", on_click=open_manual, key="nav_manual")
+    else:
+        st.button(f"{'🦊' if is_mm else '✏️'} {fmt_addr(wallet)} ✕", on_click=do_disconnect, key="nav_disconnect")
+
+# Toasts
+txs = st.session_state.tx_status
+if txs == "manual_ok":
+    st.success("✅ Address saved (read-only). Use MetaMask to buy.")
+elif txs == "manual_bad":
+    st.error("❌ Invalid address — must be 42 chars starting with 0x.")
+elif txs == "manual_empty":
+    st.warning("Please enter a wallet address.")
+elif txs == "no_js":
+    st.error("streamlit-javascript not installed. MetaMask actions disabled.")
+elif txs == "mm_fail":
+    st.warning(f"MetaMask connect failed: {st.session_state.tx_value}")
+st.session_state.tx_status = None
+st.session_state.tx_value = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Manual connect panel
+# ─────────────────────────────────────────────────────────────────────────────
+if st.session_state.show_manual and not wallet:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown("#### 🔗 Connect Wallet (Read-only)")
+    st.markdown('<div class="muted">Paste a wallet address to view tickets/balances. Buying requires MetaMask.</div>', unsafe_allow_html=True)
+
+    st.text_input("Wallet address", key="manual_input", placeholder="0x1234…abcd", label_visibility="collapsed")
 
     b1, b2 = st.columns(2, gap="small")
     with b1:
-        st.markdown('<div class="primaryBtn">', unsafe_allow_html=True)
-        if st.button("🟡 Buy Tickets Now ↗", key="btn_buy"):
-            st.session_state.ui_mode = "buy"
+        st.button("✅ Use This Address", on_click=submit_manual, key="manual_submit")
+    with b2:
+        st.button("Cancel", on_click=close_manual, key="manual_cancel")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hero
+# ─────────────────────────────────────────────────────────────────────────────
+hl, hr = st.columns([1.1, 1], gap="large")
+
+with hl:
+    rid = rsnap.get("round_id")
+    st.markdown(f'<span class="pill">{"ROUND #"+str(rid) if rid else "LIVE"}</span>', unsafe_allow_html=True)
+    st.markdown("## DECENTRALIZED LOTTERY")
+    st.markdown('<div class="muted">On-chain lottery with transparent pool and auditable ticket ranges.</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="btnrow">', unsafe_allow_html=True)
+    bA, bB, bC = st.columns(3, gap="small")
+    with bA:
+        st.button("🟡 Buy Tickets", on_click=lambda: st.session_state.update(ui_mode="buy"), key="hero_buy")
+    with bB:
+        st.button("🎟️ My Tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"), key="hero_mytickets")
+    with bC:
+        if st.button("🔄 Refresh", key="hero_refresh"):
+            st.cache_data.clear()
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div class="muted" style="margin-top:10px">'
+        f'Contract: <code>{fmt_addr(LOTTO_CONTRACT)}</code> &nbsp;·&nbsp; '
+        f'USDT: <code>{fmt_addr(USDT)}</code> &nbsp;·&nbsp; {abi_txt}'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+with hr:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="muted" style="font-size:11px; font-weight:800; letter-spacing:1px;">TOTAL PRIZE POOL</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="big">{pool:,.2f} <span style="font-size:16px; opacity:.75">{sym}</span></div>', unsafe_allow_html=True)
+
+    stt = state_lbl(rsnap.get("state", 0)) if rsnap else "🟢 Open"
+    draw_str = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
+    close_str = rsnap.get("close_str", "N/A") if rsnap else "N/A"
+    sold = rsnap.get("sold", "—")
+    price = rsnap.get("price_str", "N/A")
+
+    a1, a2 = st.columns(2, gap="small")
+    with a1:
+        st.metric("Tickets Sold", sold)
+        st.metric("Ticket Price", price)
+    with a2:
+        st.metric("Contract BNB", f"{snap['c_bnb']:.4f}")
+        st.metric("Admin BNB", f"{snap['a_bnb']:.4f}")
+
+    if rsnap:
+        st.markdown(
+            f'<div class="muted">'
+            f'State: <b>{stt}</b><br/>'
+            f'Sales Close: <b>{close_str}</b> (<b>{countdown_label(int(rsnap.get("close_ts",0)))}</b>)<br/>'
+            f'Next Draw: <b>{draw_str}</b> (<b>{countdown_label(int(rsnap.get("draw_ts",0)))}</b>)'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(f'<div class="muted">State: <b>{stt}</b> &nbsp;·&nbsp; Next Draw: <b>{draw_str}</b></div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUY PANEL (MetaMask approve + buyTickets)
+# ─────────────────────────────────────────────────────────────────────────────
+if st.session_state.ui_mode == "buy":
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    h1, h2 = st.columns([8, 1])
+    with h1:
+        st.markdown("### 🟡 Buy Tickets")
+    with h2:
+        st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"), key="buy_close")
+
+    if not wallet:
+        st.info("Connect MetaMask to buy tickets, or enter a wallet address for read-only mode.")
+        c1, c2 = st.columns(2, gap="small")
+        with c1:
+            st.button("🦊 Connect MetaMask", on_click=do_connect_metamask, key="buy_connect")
+        with c2:
+            st.button("✏️ Manual", on_click=open_manual, key="buy_manual")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    with b2:
-        if st.button("🎟️ View My Tickets", key="btn_mytickets"):
-            st.session_state.ui_mode = "my_tickets"
+    elif is_manual:
+        st.warning(f"Read-only mode: {fmt_addr(wallet)}. Buying requires MetaMask.")
+        st.button("🦊 Switch to MetaMask", on_click=do_connect_metamask, key="buy_switch_mm")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # Contract info
-    st.markdown(
-        f"""
-<div style="margin-top:18px; color: rgba(233,238,247,0.55); font-size: 12px;">
-Contract: {fmt_addr(LOTTO_CONTRACT)} &nbsp; • &nbsp; USDT: {fmt_addr(USDT)}
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+    else:
+        if not lotto_c:
+            st.error("ABI not loaded. Add lotto_abi.json to repo root so we can read ticket price & round details.")
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            qty = st.number_input(
+                "Number of tickets",
+                min_value=1, max_value=100,
+                value=int(st.session_state.buy_qty),
+                step=1,
+                key="buy_qty_input"
+            )
+            st.session_state.buy_qty = int(qty)
 
-with right:
-    total_pool = float(snap.get("contract_usdt", 0.0))
-    usdt_symbol = snap.get("usdt_symbol", "USDT")
+            tp_units = rsnap.get("price_units")
+            dec = rsnap.get("dec", snap["dec"])
+            sym2 = rsnap.get("sym", snap["sym"])
 
-    contract_bnb = float(snap.get("contract_bnb", 0.0))
-    admin_bnb = float(snap.get("admin_bnb", 0.0))
+            total_cost_units = None
+            if tp_units is not None:
+                total_cost_units = int(tp_units) * int(qty)
+                st.success(f"Total cost: {total_cost_units / 10**dec:,.4f} {sym2}")
+                st.caption(f"{qty} × {rsnap.get('price_str','N/A')}")
 
-    # From lotto snapshot if ABI loaded
-    tickets_sold = lotto_snap.get("tickets_sold", None)
-    round_id = lotto_snap.get("round_id", None)
-    draw_text = lotto_snap.get("draw_human", "Not available (add Lotto ABI)") if LOTTO_ABI_LOADED else "Not available (add Lotto ABI)"
-    ticket_price = lotto_snap.get("ticket_price_human", "N/A") if LOTTO_ABI_LOADED else "N/A"
+            if not HAS_JS:
+                st.error("Install `streamlit-javascript` to enable MetaMask transactions.")
+                st.markdown("</div>", unsafe_allow_html=True)
+            elif total_cost_units is None:
+                st.warning("Ticket price unavailable from contract.")
+                st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                if st.button(f"🟡 Buy {qty} Ticket{'s' if qty > 1 else ''} via MetaMask", key="buy_submit"):
+                    js = f"""
+async()=>{{
+  try {{
+    if(!window.ethereum) return {{ok:false, err:"no_metamask"}};
+    const {{ethers}} = await import('https://cdn.ethers.io/lib/ethers-5.7.umd.min.js');
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send('eth_requestAccounts', []);
+    const signer = provider.getSigner();
 
-    st.markdown(
-        f"""
-<div class="glow">
-  <div class="cardTitle">Total Prize Pool (Contract USDT Balance)</div>
-  <div class="bigMoney">{total_pool:,.2f} {usdt_symbol}</div>
+    const usdt = new ethers.Contract(
+      '{USDT}',
+      ['function approve(address,uint256) returns(bool)',
+       'function allowance(address,address) view returns(uint256)'],
+      signer
+    );
 
-  <div class="miniGrid">
-    <div class="miniBox">
-      <div class="miniLabel">Round</div>
-      <div class="miniValue">{(round_id if round_id is not None else "—")}</div>
-    </div>
-    <div class="miniBox">
-      <div class="miniLabel">Tickets Sold</div>
-      <div class="miniValue">{(tickets_sold if tickets_sold is not None else "—")}</div>
-    </div>
-  </div>
+    const lotto = new ethers.Contract(
+      '{LOTTO_CONTRACT}',
+      ['function buyTickets(uint256) external'],
+      signer
+    );
 
-  <div class="miniGrid" style="margin-top:12px;">
-    <div class="miniBox">
-      <div class="miniLabel">Contract BNB</div>
-      <div class="miniValue">{contract_bnb:.4f}</div>
-    </div>
-    <div class="miniBox">
-      <div class="miniLabel">Admin BNB</div>
-      <div class="miniValue">{admin_bnb:.4f}</div>
-    </div>
-  </div>
+    const amt = ethers.BigNumber.from('{int(total_cost_units)}');
+    const me = await signer.getAddress();
+    const alw = await usdt.allowance(me, '{LOTTO_CONTRACT}');
+    if (alw.lt(amt)) {{
+      const tx1 = await usdt.approve('{LOTTO_CONTRACT}', amt);
+      await tx1.wait();
+    }}
 
-  <div style="margin-top:12px; color: rgba(233,238,247,0.55); font-size: 12px;">
-    Ticket Price: <span style="color: rgba(233,238,247,0.88); font-weight: 950;">{ticket_price}</span><br/>
-    Next Draw: <span style="color: rgba(233,238,247,0.88); font-weight: 950;">{draw_text}</span>
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+    const tx2 = await lotto.buyTickets({int(qty)});
+    await tx2.wait();
 
-st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+    return {{ok:true, hash: tx2.hash}};
+  }} catch(e) {{
+    return {{ok:false, err: e && e.message ? e.message : String(e)}};
+  }}
+}}
+"""
+                    res = st_javascript(js, key=f"js_buy_{int(qty)}_{int(total_cost_units)}")
+                    if isinstance(res, dict) and res.get("ok"):
+                        st.success(f"✅ Purchased! Tx: {res.get('hash')}")
+                        st.markdown(f"[🔍 View on BscScan](https://bscscan.com/tx/{res.get('hash')})")
+                        st.cache_data.clear()
+                    else:
+                        st.error(f"❌ Failed: {(res.get('err') if isinstance(res, dict) else res)}")
 
-# -----------------------------
-# Optional sections based on hero buttons
-# -----------------------------
-if st.session_state.ui_mode == "buy":
-    with st.container(border=True):
-        st.markdown("### 🟡 Buy Tickets")
-        if not st.session_state.wallet:
-            st.info("Connect your wallet (MetaMask) or paste a wallet address (manual).")
-        st.write("This Streamlit app can show on-chain stats safely. **Sending transactions (approve + buyTickets) must be done in browser-side JS**.")
-        st.caption("If you want, I’ll add the full MetaMask approve + buyTickets flow using an embedded JS component (ethers.js) and your ABI.")
+                st.caption("Your contract enforces sales close = drawTimestamp - leadTimeSeconds.")
+                st.markdown("</div>", unsafe_allow_html=True)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MY TICKETS PANEL (from TicketsBought events)
+# ─────────────────────────────────────────────────────────────────────────────
 elif st.session_state.ui_mode == "my_tickets":
-    with st.container(border=True):
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    h1, h2 = st.columns([8, 1])
+    with h1:
         st.markdown("### 🎟️ My Tickets")
-        if not st.session_state.wallet:
-            st.info("Connect your wallet (MetaMask) or paste a wallet address (manual).")
+    with h2:
+        st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"), key="my_close")
+
+    if not wallet:
+        st.info("Connect or enter a wallet address to view tickets.")
+        c1, c2 = st.columns(2, gap="small")
+        with c1:
+            st.button("🦊 Connect MetaMask", on_click=do_connect_metamask, key="my_connect")
+        with c2:
+            st.button("✏️ Manual", on_click=open_manual, key="my_manual")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    elif not lotto_c:
+        st.warning("ABI not loaded — add lotto_abi.json so we can read TicketsBought events properly.")
+        st.markdown(f"[🔍 View contract events on BscScan](https://bscscan.com/address/{LOTTO_CONTRACT}#events)")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    else:
+        st.caption(f"Wallet: {wallet} ({'MetaMask' if is_mm else 'Read-only'})")
+
+        lookback = st.slider("Lookback blocks", min_value=10_000, max_value=300_000, value=120_000, step=10_000, key="my_lookback")
+        with st.spinner("Fetching ticket purchases…"):
+            purchases = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
+
+        if not purchases:
+            st.info("No TicketsBought events found in the selected lookback range.")
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            st.write(f"Wallet: `{st.session_state.wallet}`")
-            st.caption("Next step: query TicketsBought events for your wallet and list ticket ranges + tx hashes (needs Lotto ABI).")
+            rounds = sorted({p["round"] for p in purchases}, reverse=True)
+            pick_round = st.selectbox("Round", rounds, index=0, key="my_round_select")
 
-# -----------------------------
-# Mid section title + dynamic subtitle
-# -----------------------------
-st.markdown('<div class="sectionTitle">TRANSPARENT DISTRIBUTION</div>', unsafe_allow_html=True)
+            subset = [p for p in purchases if p["round"] == pick_round]
+            st.markdown(f"**{len(subset)} purchase(s) found in Round #{pick_round}:**")
 
-if LOTTO_ABI_LOADED and lotto_snap.get("round_id") is not None:
-    sub = (
-        f"Live round #{lotto_snap.get('round_id')} • "
-        f"State: {lotto_snap.get('round_state_text','-')} • "
-        f"Tickets sold: {lotto_snap.get('tickets_sold','-')} • "
-        f"Next draw: {lotto_snap.get('draw_human','-')}"
-    )
-else:
-    sub = "Prize pool is computed from on-chain balances and transfers."
+            expand_small = st.checkbox("Expand into individual ticket numbers (only if qty ≤ 50)", value=False, key="my_expand")
 
-if not LOTTO_ABI_LOADED:
-    sub += " For full stats, add lotto_abi.json (or set LOTTO_ABI_PATH)."
+            for i, p in enumerate(subset):
+                qty = int(p["qty"])
+                start = int(p["first"])
+                end = int(p["last"])
+                tx = p["tx"]
 
-st.markdown(f'<div class="sectionSub">{sub}</div>', unsafe_allow_html=True)
-st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
-
-# -----------------------------
-# Bottom panels (ALL inside bordered containers -> no “out of box”)
-# -----------------------------
-col1, col2, col3 = st.columns(3, gap="large")
-
-with col1:
-    with st.container(border=True):
-        st.markdown("**🏆 Prize Structure**  \nHow the pool is split")
-        fig = donut_figure(PRIZE_SPLIT)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key="donut_main")
-        st.caption("• 1st Prize   • 2nd Prize   • 3rd Prize   • Admin Fee")
-
-with col2:
-    with st.container(border=True):
-        st.markdown("**🧾 Recent USDT Transfers**  \nTransfers to the Lotto contract (on-chain)")
-        logs = snap.get("logs", []) or []
-        if not logs:
-            st.markdown("<div class='smallMuted' style='margin-top:10px;'>No recent USDT transfers found in the lookback window.</div>", unsafe_allow_html=True)
-        else:
-            for lg in logs[:10]:
                 st.markdown(
                     f"""
-<div class="smallMuted" style="margin-bottom:10px;">
-  <b>{lg["amount"]:.2f} {lg["symbol"]}</b>
-  <span style="opacity:0.55;">from</span> {fmt_addr(lg["from"])}
-  <span style="opacity:0.55;">(blk {lg["block"]})</span><br/>
-  <span style="opacity:0.55;">tx</span> {fmt_addr(lg["tx"])}
-</div>
-""",
-                    unsafe_allow_html=True,
-                )
-
-with col3:
-    with st.container(border=True):
-        st.markdown("**📈 Platform Stats**  \nBalances and configuration")
-        st.markdown(
-            f"""
-<div style="margin-top:10px;">
-  <div class="miniLabel">USDT Balance (Admin)</div>
-  <div style="font-size:22px; font-weight:950; margin-top:6px;">{snap["admin_usdt"]:,.2f} {snap["usdt_symbol"]}</div>
-</div>
-<div style="margin-top:14px;">
-  <div class="miniLabel">Latest Block</div>
-  <div style="font-size:18px; font-weight:950; margin-top:6px;">{snap["latest_block"]:,}</div>
-</div>
-<div style="margin-top:14px;">
-  <div class="miniLabel">RPC</div>
-  <div class="smallMuted" style="margin-top:6px;">{BSC_RPC}</div>
-</div>
-<div style="margin-top:14px;">
-  <div class="miniLabel">ABI Status</div>
-  <div class="smallMuted" style="margin-top:6px;">
-    {"✅ Lotto ABI loaded" if LOTTO_ABI_LOADED else "⚠️ Lotto ABI not loaded (balances-only mode)"}
+<div style="padding:14px;border-radius:14px;border:1px solid rgba(245,196,0,.18);background:rgba(245,196,0,.06);margin-bottom:10px;">
+  <div style="font-weight:900;">Round #{p["round"]} · Qty: {qty}</div>
+  <div class="muted" style="margin-top:6px;">
+    Tickets: <b>{start}</b> → <b>{end}</b><br/>
+    Tx: <a href="https://bscscan.com/tx/{tx}" target="_blank" style="color:#f5c400;text-decoration:none;">{fmt_addr(tx)} ↗</a>
   </div>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
+                    unsafe_allow_html=True
+                )
 
-# -----------------------------
-# Wrapper end
-# -----------------------------
-st.markdown("</div>", unsafe_allow_html=True)
+                if expand_small and qty <= 50:
+                    ids = list(range(start, end + 1))
+                    st.code(", ".join(map(str, ids)), language="text")
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bottom analytics (always visible)
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
+
+PRIZE_SPLIT = {
+    "1st Prize (40%)": 40,
+    "2nd Prize (25%)": 25,
+    "3rd Prize (15%)": 15,
+    "4th Prize (10%)": 10,
+    "5th Prize (5%)": 5,
+    "6th Prize (5%)": 5,
+    "Admin Fee (20%)": 20,
+}
+
+c1, c2, c3 = st.columns(3, gap="large")
+
+with c1:
+    st.markdown("#### 🏆 Prize Structure")
+    st.plotly_chart(donut(PRIZE_SPLIT), use_container_width=True, config={"displayModeBar": False})
+    for lbl, pct in PRIZE_SPLIT.items():
+        st.write(f"{lbl}: **{pool * pct / 100:,.2f} {sym}**")
+
+with c2:
+    st.markdown("#### 🧾 Recent Transfers (USDT → Contract)")
+    logs = snap.get("logs", [])
+    if not logs:
+        st.caption("No recent inbound transfers found in the lookback window.")
+    else:
+        for lg in logs:
+            st.markdown(
+                f"""
+<div style="padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(15,19,31,.70);margin-bottom:8px;">
+  <div style="font-weight:900;color:#f5c400;">+{lg["amount"]:.2f} {lg["symbol"]}</div>
+  <div class="muted" style="font-size:12px;margin-top:4px;">
+    blk {lg["block"]:,} · from {fmt_addr(lg["from"])} ·
+    <a href="https://bscscan.com/tx/{lg["tx"]}" target="_blank" style="color:#f5c400;text-decoration:none;">{fmt_addr(lg["tx"])} ↗</a>
+  </div>
+</div>
+""",
+                unsafe_allow_html=True
+            )
+
+with c3:
+    st.markdown("#### 📈 Platform Stats")
+    st.write(f"USDT (Contract): **{snap['c_usdt']:,.2f} {sym}**")
+    st.write(f"USDT (Admin): **{snap['a_usdt']:,.2f} {sym}**")
+    st.write(f"BNB (Contract): **{snap['c_bnb']:.6f}**")
+    st.write(f"BNB (Admin): **{snap['a_bnb']:.6f}**")
+    st.write(f"Network: **{net_badge}**")
+    st.write(f"ABI: **{'Loaded' if lotto_c else 'Not loaded'}**")
+    st.caption(f"RPC: {ACTIVE_RPC}")
+
+st.markdown(
+    f'<div class="muted" style="text-align:center; padding:18px 0; font-size:11px;">'
+    f'LOTTOLOTTERY · Contract {fmt_addr(LOTTO_CONTRACT)} · Refreshes ~15s</div>',
+    unsafe_allow_html=True
+)
