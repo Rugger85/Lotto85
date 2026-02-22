@@ -25,7 +25,7 @@ except Exception:
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit setup
 # ─────────────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="LOTTOLOTTERY", layout="wide", page_icon="🎰")
+st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -505,7 +505,7 @@ hl, hr = st.columns([1.1, 1], gap="large")
 with hl:
     rid = rsnap.get("round_id")
     st.markdown(f'<span class="pill">{"ROUND #"+str(rid) if rid else "LIVE"}</span>', unsafe_allow_html=True)
-    st.markdown("## DECENTRALIZED WEALTH DISTRIBUTION")
+    st.markdown("## DECENTRALIZED LOTTERY")
     st.markdown('<div class="muted">On-chain lottery with transparent pool and auditable ticket ranges.</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="btnrow">', unsafe_allow_html=True)
