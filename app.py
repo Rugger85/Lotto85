@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os, json, time
+import os, json
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -125,6 +125,9 @@ lotto_c = w3.eth.contract(address=LOTTO_CONTRACT, abi=LOTTO_ABI) if LOTTO_ABI el
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+def now_ts() -> int:
+    return int(datetime.now(tz=timezone.utc).timestamp())
+
 def fmt_addr(a: str) -> str:
     a = str(a)
     return a[:6] + "…" + a[-4:] if a.startswith("0x") and len(a) > 10 else a
@@ -149,8 +152,27 @@ def ts(t: int | None) -> str:
     except Exception:
         return "N/A"
 
+def fmt_countdown(seconds: int) -> str:
+    if seconds <= 0:
+        return "0s"
+    d, rem = divmod(seconds, 86400)
+    h, rem = divmod(rem, 3600)
+    m, s = divmod(rem, 60)
+    if d > 0:
+        return f"{d}d {h}h {m}m"
+    if h > 0:
+        return f"{h}h {m}m"
+    if m > 0:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
 def state_lbl(s: int) -> str:
-    return {0: "⏳ Pending", 1: "🟢 Live", 2: "🔒 Closed", 3: "🎉 Drawn"}.get(int(s), f"State {s}")
+    # Contract enum: 0=OPEN, 1=SALES_CLOSED, 2=DRAWN
+    return {
+        0: "🟢 OPEN",
+        1: "🔒 SALES CLOSED",
+        2: "🎉 DRAWN",
+    }.get(int(s), f"State {s}")
 
 def pad_topic_addr(addr: str) -> str:
     return "0x" + "0" * 24 + addr.lower().replace("0x", "")
@@ -215,24 +237,17 @@ def get_round_snap():
     if not lotto_c:
         return {}
 
-    # Expected contract interface (adapt if your struct differs):
-    # currentRound() -> (state, drawTs, closeTs, sold, startTicketId, endTicketId?) OR similar
-    # roundId() -> uint
-    # ticketPrice() -> uint
-    # usdt() -> address
     try:
         rid = safe(lambda: int(lotto_c.functions.roundId().call()))
         cr  = lotto_c.functions.currentRound().call()
 
-        # We will interpret common layouts safely:
-        state     = int(cr[0]) if len(cr) > 0 else 1
+        # UsdtLottoManual.currentRound():
+        # (state, drawTimestamp, salesCloseTimestamp, ticketsSold, startTicketId, commitHash)
+        state     = int(cr[0]) if len(cr) > 0 else 0
         draw_ts   = int(cr[1]) if len(cr) > 1 else 0
         close_ts  = int(cr[2]) if len(cr) > 2 else 0
         sold      = int(cr[3]) if len(cr) > 3 else 0
         start_id  = int(cr[4]) if len(cr) > 4 else None
-
-        # Optional end ticket id if present
-        end_id    = int(cr[5]) if len(cr) > 5 else None
 
         # Pull USDT metadata from contract USDT address if available
         dec = None
@@ -253,6 +268,15 @@ def get_round_snap():
             s = sym if sym is not None else get_snap()["sym"]
             price_str = f"{tp_units / 10**d:,.4f} {s}"
 
+        # Winner % + admin fee
+        admin_bps = safe(lambda: int(lotto_c.functions.adminFeeBps().call()), None)
+        wps = []
+        try:
+            for i in range(6):
+                wps.append(int(lotto_c.functions.winnerPct(i).call()))
+        except Exception:
+            wps = []
+
         return dict(
             round_id=rid,
             state=state,
@@ -260,12 +284,14 @@ def get_round_snap():
             close_ts=close_ts,
             sold=sold,
             start_id=start_id,
-            end_id=end_id,
             draw_str=ts(draw_ts),
+            close_str=ts(close_ts),
             price_units=tp_units,
             price_str=price_str,
             dec=dec if dec is not None else get_snap()["dec"],
             sym=sym if sym is not None else get_snap()["sym"],
+            admin_bps=admin_bps,
+            winner_pcts=wps
         )
     except Exception:
         return {}
@@ -284,7 +310,6 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
     frm = max(0, latest - int(lookback_blocks))
 
     out = []
-    # If ABI has the event, use it; otherwise attempt raw logs
     try:
         evs = lotto_c.events.TicketsBought.create_filter(
             from_block=frm,
@@ -296,9 +321,10 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
             args = ev["args"]
             out.append({
                 "round": int(args.get("roundId")),
-                "qty": int(args.get("quantity")),
-                "start": int(args.get("startTicketId")),
-                "end": int(args.get("endTicketId")),
+                "qty": int(args.get("qty")),
+                "cost": int(args.get("cost")),
+                "start": int(args.get("firstTicketId")),
+                "end": int(args.get("lastTicketId")),
                 "tx": ev["transactionHash"].hex(),
                 "block": int(ev["blockNumber"]),
             })
@@ -430,6 +456,13 @@ is_manual = st.session_state.wallet_type == "manual"
 net_badge = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
 abi_txt = "✅ ABI Loaded" if lotto_c else "⚠️ ABI not loaded (add lotto_abi.json)"
 
+# Time-based sales close (important!)
+now = now_ts()
+close_ts = int(rsnap.get("close_ts") or 0) if rsnap else 0
+draw_ts  = int(rsnap.get("draw_ts") or 0) if rsnap else 0
+sales_closed_by_time = (close_ts > 0 and now >= close_ts)
+draw_ready_by_time   = (draw_ts > 0 and now >= draw_ts)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Navbar
@@ -500,7 +533,7 @@ if st.session_state.show_manual and not wallet:
 hl, hr = st.columns([1.1, 1], gap="large")
 
 with hl:
-    rid = rsnap.get("round_id")
+    rid = rsnap.get("round_id") if rsnap else None
     st.markdown(f'<span class="pill">{"ROUND #"+str(rid) if rid else "LIVE"}</span>', unsafe_allow_html=True)
     st.markdown("## DECENTRALIZED WEALTH DISTRIBUTION")
     st.markdown('<div class="muted">On-chain lottery with transparent pool and auditable ticket ranges.</div>', unsafe_allow_html=True)
@@ -528,10 +561,20 @@ with hr:
     st.markdown('<div class="muted" style="font-size:11px; font-weight:800; letter-spacing:1px;">TOTAL PRIZE POOL</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="big">{pool:,.2f} <span style="font-size:16px; opacity:.75">{sym}</span></div>', unsafe_allow_html=True)
 
-    stt = state_lbl(rsnap.get("state", 1)) if rsnap else "🟢 Live"
+    sold = rsnap.get("sold", "—") if rsnap else "—"
+    price = rsnap.get("price_str", "N/A") if rsnap else "N/A"
+
+    # Effective status (time-aware)
+    chain_state = int(rsnap.get("state", 0)) if rsnap else 0
+    if chain_state == 2:
+        stt = "🎉 DRAWN"
+    elif sales_closed_by_time:
+        stt = "🔒 SALES CLOSED"
+    else:
+        stt = "🟢 OPEN"
+
     draw_str = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
-    sold = rsnap.get("sold", "—")
-    price = rsnap.get("price_str", "N/A")
+    close_str = rsnap.get("close_str", "N/A") if rsnap else "N/A"
 
     a1, a2 = st.columns(2, gap="small")
     with a1:
@@ -542,6 +585,13 @@ with hr:
         st.metric("Admin BNB", f"{snap['a_bnb']:.4f}")
 
     st.markdown(f'<div class="muted">State: <b>{stt}</b> &nbsp;·&nbsp; Next Draw: <b>{draw_str}</b></div>', unsafe_allow_html=True)
+
+    if close_ts > 0 and chain_state != 2:
+        if sales_closed_by_time:
+            st.caption(f"Sales closed at: {close_str} (contract will show OPEN until owner calls closeSales())")
+        else:
+            st.caption(f"Sales close in: {fmt_countdown(close_ts - now)} · Close time: {close_str}")
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
@@ -573,7 +623,24 @@ if st.session_state.ui_mode == "buy":
             st.error("ABI not loaded. Add lotto_abi.json to repo root so we can read ticket price & round details.")
             st.markdown("</div>", unsafe_allow_html=True)
         else:
-            qty = st.number_input("Number of tickets", min_value=1, max_value=100, value=int(st.session_state.buy_qty), step=1)
+            # Enforce time-based close in UI (matches contract rule)
+            if sales_closed_by_time:
+                st.error(f"Sales are CLOSED (since {ts(close_ts)}). You can’t buy tickets for this round.")
+                st.caption("Note: Contract may still show state OPEN until the owner calls closeSales().")
+                st.markdown("</div>", unsafe_allow_html=True)
+                st.stop()
+            else:
+                if close_ts > 0:
+                    st.info(f"Sales close in: {fmt_countdown(close_ts - now)} · Close time: {ts(close_ts)}")
+
+            max_per_buy = safe(lambda: int(lotto_c.functions.maxTicketsPerBuy().call()), 100)
+            qty = st.number_input(
+                "Number of tickets",
+                min_value=1,
+                max_value=int(max_per_buy),
+                value=int(st.session_state.buy_qty),
+                step=1
+            )
             st.session_state.buy_qty = int(qty)
 
             tp_units = rsnap.get("price_units")
@@ -602,9 +669,6 @@ async()=>{{
     const provider = new ethers.providers.Web3Provider(window.ethereum);
     await provider.send('eth_requestAccounts', []);
     const signer = provider.getSigner();
-
-    // Chain check (optional)
-    // const net = await provider.getNetwork();
 
     const usdt = new ethers.Contract(
       '{USDT}',
@@ -641,10 +705,11 @@ async()=>{{
                         st.success(f"✅ Purchased! Tx: {res.get('hash')}")
                         st.markdown(f"[🔍 View on BscScan](https://bscscan.com/tx/{res.get('hash')})")
                         st.cache_data.clear()
+                        st.rerun()
                     else:
                         st.error(f"❌ Failed: {(res.get('err') if isinstance(res, dict) else res)}")
 
-                st.caption("Note: Contract must store ticket ownership for automatic on-chain payouts.")
+                st.caption("Payouts are on-chain (contract stores ticket ownership).")
                 st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -680,7 +745,6 @@ elif st.session_state.ui_mode == "my_tickets":
             st.info("No TicketsBought events found in the selected lookback range.")
             st.markdown("</div>", unsafe_allow_html=True)
         else:
-            # Group by round
             rounds = sorted({p["round"] for p in purchases}, reverse=True)
             pick_round = st.selectbox("Round", rounds, index=0)
 
@@ -720,7 +784,18 @@ elif st.session_state.ui_mode == "my_tickets":
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-PRIZE_SPLIT = {"1st Prize (40%)": 40, "2nd Prize (25%)": 25, "3rd Prize (15%)": 15, "Admin Fee (20%)": 20}
+# Dynamic prize split from contract if possible
+PRIZE_SPLIT = {}
+if rsnap and rsnap.get("winner_pcts") and rsnap.get("admin_bps") is not None:
+    wps = rsnap["winner_pcts"]
+    admin_pct = float(rsnap["admin_bps"]) / 100.0
+    for i, pct in enumerate(wps, start=1):
+        PRIZE_SPLIT[f"Winner #{i} ({pct}%)"] = float(pct)
+    PRIZE_SPLIT[f"Admin Fee ({admin_pct:.2f}%)"] = float(admin_pct)
+else:
+    # fallback (avoid wrong numbers if ABI missing)
+    PRIZE_SPLIT = {"Winners": 80, "Admin Fee": 20}
+
 c1, c2, c3 = st.columns(3, gap="large")
 
 with c1:
