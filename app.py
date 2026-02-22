@@ -440,7 +440,7 @@ abi_txt = "✅ ABI Loaded" if lotto_c else "⚠️ ABI not loaded (add lotto_abi
 l, m, r = st.columns([1.4, 3.5, 1.7], gap="small")
 
 with l:
-    st.markdown("### 🎰 LOTTOLOTTERY")
+    st.markdown("### 🎰 LOTTO")
 with m:
     st.markdown(
         f'<div class="muted">'
