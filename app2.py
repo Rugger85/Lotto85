@@ -32,16 +32,36 @@ st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 # Config (Streamlit Cloud: st.secrets, Local: .env)
 # ─────────────────────────────────────────────────────────────────────────────
 def cfg(key: str, default: str = "") -> str:
-    if key in st.secrets:
-        return str(st.secrets[key])
+    # 1) direct root keys: st.secrets["LOTTO_CONTRACT"]
+    try:
+        if key in st.secrets:
+            v = st.secrets[key]
+            return str(v) if v is not None else default
+    except Exception:
+        pass
+
+    # 2) common nested section: st.secrets["secrets"]["LOTTO_CONTRACT"]
+    try:
+        if "secrets" in st.secrets and key in st.secrets["secrets"]:
+            v = st.secrets["secrets"][key]
+            return str(v) if v is not None else default
+    except Exception:
+        pass
+
+    # 3) env vars (local .env or Streamlit Cloud "Environment variables")
     return os.getenv(key, default)
+
+st.write("Secrets keys:", list(st.secrets.keys()))
+if "secrets" in st.secrets:
+    st.write("Nested secrets keys:", list(st.secrets["secrets"].keys()))
 
 CHAIN_ID            = int(cfg("CHAIN_ID", "56"))
 BSC_RPC_PRIMARY     = cfg("BSC_RPC", "")
 LOTTO_CONTRACT_ADDR = cfg("LOTTO_CONTRACT", "")
 USDT_ADDRESS        = cfg("USDT_ADDRESS", "")
 ADMIN_WALLET        = cfg("ADMIN_WALLET", "")
-LOTTO_ABI_PATH      = cfg("LOTTO_ABI_PATH", "lotto_abi.json")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOTTO_ABI_PATH = os.path.join(BASE_DIR, cfg("LOTTO_ABI_PATH", "lotto_abi.json"))
 
 # Optional: add extra RPCs in secrets as BSC_RPC_2, BSC_RPC_3...
 RPCS = [BSC_RPC_PRIMARY]
