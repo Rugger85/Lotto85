@@ -27,10 +27,29 @@ import os, json, streamlit as st
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 
+# ---------------------------
+
+def load_abi(path: str):
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    # Some tools save {"abi":[...]} instead of [...]
+    return data["abi"] if isinstance(data, dict) and "abi" in data else data
+
+def make_contract(w3: Web3, addr: str, abi):
+    if not addr:
+        raise ValueError("LOTTO_CONTRACT is empty")
+    if not abi:
+        raise ValueError("ABI is empty or not loaded")
+    return w3.eth.contract(address=Web3.to_checksum_address(addr), abi=abi)
+
+ABI_PATH = st.secrets.get("LOTTO_ABI_PATH", "lotto_abi.json")
+LOTTO_CONTRACT = st.secrets.get("LOTTO_CONTRACT", "")
+
+LOTTO_ABI = load_abi(ABI_PATH)
+lotto_c = make_contract(w3, LOTTO_CONTRACT, LOTTO_ABI)
 
 
-
-
+# ---------------------------
 
 
 # ─────────────────────────────────────────────────────────────────────────────
