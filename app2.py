@@ -32,19 +32,36 @@ st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 def load_abi(path: str):
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    # Some tools save {"abi":[...]} instead of [...]
     return data["abi"] if isinstance(data, dict) and "abi" in data else data
 
 def make_contract(w3: Web3, addr: str, abi):
+    if not w3:
+        raise ValueError("Web3 (w3) is not initialized")
+    if not w3.is_connected():
+        raise ValueError("Web3 is not connected to RPC")
     if not addr:
         raise ValueError("LOTTO_CONTRACT is empty")
     if not abi:
         raise ValueError("ABI is empty or not loaded")
     return w3.eth.contract(address=Web3.to_checksum_address(addr), abi=abi)
 
-ABI_PATH = st.secrets.get("LOTTO_ABI_PATH", "lotto_abi.json")
+# ---- load config ----
+BSC_RPC = st.secrets.get("BSC_RPC", "")
 LOTTO_CONTRACT = st.secrets.get("LOTTO_CONTRACT", "")
+ABI_PATH = st.secrets.get("LOTTO_ABI_PATH", "lotto_abi.json")
 
+if not BSC_RPC:
+    st.error("Missing BSC_RPC in Streamlit secrets")
+    st.stop()
+
+# ---- init web3 FIRST ----
+w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+
+if not w3.is_connected():
+    st.error("RPC connection failed. Check BSC_RPC in secrets.")
+    st.stop()
+
+# ---- then load abi + contract ----
 LOTTO_ABI = load_abi(ABI_PATH)
 lotto_c = make_contract(w3, LOTTO_CONTRACT, LOTTO_ABI)
 
