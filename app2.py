@@ -20,7 +20,19 @@ try:
     HAS_JS = True
 except Exception:
     HAS_JS = False
+import os, json, streamlit as st
 
+abi_path = st.secrets.get("LOTTO_ABI_PATH", "lotto_abi.json")
+st.write("ABI path:", abi_path)
+st.write("Files here:", os.listdir("."))
+
+try:
+    with open(abi_path, "r", encoding="utf-8") as f:
+        abi = json.load(f)
+    st.success(f"ABI loaded OK. Entries: {len(abi)}")
+except Exception as e:
+    st.error(f"ABI load FAILED: {e}")
+    st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit setup
