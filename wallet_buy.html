@@ -1,0 +1,171 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>LOTTO — Buy Tickets</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --accent:#62c1e5; }
+    body { font-family: system-ui, Arial; background:#06080d; color:#e9eef7; margin:0; padding:24px; }
+    .card { max-width:620px; margin:0 auto; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:18px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .muted { opacity:.75; font-size:12px; line-height:1.45; }
+    .ok { color:var(--accent); font-weight:900; }
+    .err { color:#ff6b6b; font-weight:900; }
+    a { color:var(--accent); }
+    button {
+      padding:12px 14px; border-radius:12px; border:1px solid rgba(98,193,229,.6);
+      background:rgba(98,193,229,.18); color:#fff; font-weight:900; cursor:pointer;
+    }
+    button:hover { background:rgba(98,193,229,.26); }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    input {
+      width:160px; padding:12px 14px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.25);
+      color:#e9eef7; font-weight:800;
+    }
+    .box {
+      margin-top:12px; padding:12px 14px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.22);
+    }
+    code { color:var(--accent); }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <div class="card">
+    <h2 style="margin:0 0 6px 0;">LOTTO — Buy Tickets</h2>
+    <div class="muted">
+      This page connects MetaMask directly (top-level page). It will:
+      <b>switch to BSC</b> (if needed), <b>approve USDT</b>, then <b>buyTickets(qty)</b>.
+    </div>
+
+    <div class="box">
+      <div class="row">
+        <div class="muted">Tickets:</div>
+        <input id="qty" type="number" min="1" max="100" value="1" />
+        <button id="btnConnect">🦊 Connect MetaMask</button>
+        <button id="btnBuy" disabled>🟡 Approve + Buy</button>
+      </div>
+      <div id="status" class="muted" style="margin-top:10px;"></div>
+      <div id="tx" class="muted" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="muted" style="margin-top:12px;">
+      Contract: <code id="lottoAddr"></code><br/>
+      USDT: <code id="usdtAddr"></code>
+    </div>
+  </div>
+
+<script>
+const ACCENT = "#62c1e5";
+
+// 👉 Set these to your deployed addresses
+const USDT = "0x55d398326f99059fF775485246999027B3197955";
+const LOTTO = "0x4ec5a744ad5f2b7010C313DBC103F52717008218";
+
+// Minimal ABIs
+const USDT_ABI = [
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function decimals() view returns (uint8)"
+];
+const LOTTO_ABI = [
+  "function ticketPrice() view returns (uint256)",
+  "function buyTickets(uint256 qty) external"
+];
+
+document.getElementById("lottoAddr").textContent = LOTTO;
+document.getElementById("usdtAddr").textContent = USDT;
+
+let provider, signer, me;
+
+const elStatus = document.getElementById("status");
+const elTx = document.getElementById("tx");
+const btnConnect = document.getElementById("btnConnect");
+const btnBuy = document.getElementById("btnBuy");
+const qtyInput = document.getElementById("qty");
+
+function setStatus(html) { elStatus.innerHTML = html; }
+function setTx(html) { elTx.innerHTML = html; }
+
+function fmt(a){
+  if(!a) return "";
+  return a.slice(0,6) + "…" + a.slice(-4);
+}
+
+async function ensureBSC() {
+  // BSC mainnet chainId = 56 = 0x38
+  try {
+    const chainId = await window.ethereum.request({ method: "eth_chainId" });
+    if (chainId !== "0x38") {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: "0x38" }]
+      });
+    }
+  } catch(e) {
+    // If switch fails (user rejects), we still continue, but tx might fail if wrong chain.
+  }
+}
+
+btnConnect.onclick = async () => {
+  try {
+    if (!window.ethereum) {
+      setStatus('<span class="err">MetaMask not detected.</span> Install/enable the extension and reload.');
+      return;
+    }
+    provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    await ensureBSC();
+
+    signer = provider.getSigner();
+    me = await signer.getAddress();
+
+    setStatus(`Connected: <span class="ok">${fmt(me)}</span>`);
+    btnBuy.disabled = false;
+  } catch (e) {
+    setStatus(`<span class="err">Connect failed:</span> ${e.message || e}`);
+  }
+};
+
+btnBuy.onclick = async () => {
+  try {
+    btnBuy.disabled = true;
+    setTx("Preparing…");
+
+    const qty = parseInt(qtyInput.value || "1", 10);
+    if (!qty || qty < 1 || qty > 100) throw new Error("Invalid qty (1–100)");
+
+    if (!signer) throw new Error("Not connected. Click Connect MetaMask first.");
+
+    const usdt = new ethers.Contract(USDT, USDT_ABI, signer);
+    const lotto = new ethers.Contract(LOTTO, LOTTO_ABI, signer);
+
+    // Force correct chain before sending tx
+    await ensureBSC();
+
+    const price = await lotto.ticketPrice();     // token units
+    const total = price.mul(qty);
+
+    const allowance = await usdt.allowance(me, LOTTO);
+    if (allowance.lt(total)) {
+      setTx("Approving USDT… (MetaMask popup)");
+      const tx1 = await usdt.approve(LOTTO, total);
+      await tx1.wait();
+    }
+
+    setTx("Buying tickets… (MetaMask popup)");
+    const tx2 = await lotto.buyTickets(qty);
+    await tx2.wait();
+
+    setTx(`✅ Purchased. Tx: <a target="_blank" href="https://bscscan.com/tx/${tx2.hash}">${tx2.hash.slice(0,12)}…</a>`);
+  } catch (e) {
+    setTx(`<span class="err">Failed:</span> ${e.message || e}`);
+  } finally {
+    btnBuy.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
