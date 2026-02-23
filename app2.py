@@ -191,7 +191,7 @@ if abi_path.exists():
     except Exception:
         LOTTO_ABI = None
 
-lotto_c = w3.eth.contract(address=LOTTO_CONTRACT, abi=LOTTO_ABI) if LOTTO_ABI else None
+#lotto_c = w3.eth.contract(address=LOTTO_CONTRACT, abi=LOTTO_ABI) if LOTTO_ABI else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
