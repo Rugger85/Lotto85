@@ -1,5 +1,8 @@
 from __future__ import annotations
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Streamlit setup
+# ─────────────────────────────────────────────────────────────────────────────
+st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 import os, json
 from datetime import datetime, timezone
 
@@ -34,10 +37,7 @@ except Exception as e:
     st.error(f"ABI load FAILED: {e}")
     st.stop()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Streamlit setup
-# ─────────────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
