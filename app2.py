@@ -51,9 +51,9 @@ def cfg(key: str, default: str = "") -> str:
     # 3) env vars (local .env or Streamlit Cloud "Environment variables")
     return os.getenv(key, default)
 
-st.write("Secrets keys:", list(st.secrets.keys()))
-if "secrets" in st.secrets:
-    st.write("Nested secrets keys:", list(st.secrets["secrets"].keys()))
+# st.write("Secrets keys:", list(st.secrets.keys()))
+# if "secrets" in st.secrets:
+#     st.write("Nested secrets keys:", list(st.secrets["secrets"].keys()))
 
 CHAIN_ID            = int(cfg("CHAIN_ID", "56"))
 BSC_RPC_PRIMARY     = cfg("BSC_RPC", "")
