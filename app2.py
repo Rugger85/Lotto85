@@ -239,7 +239,7 @@ def get_snap():
     a_bnb = int(safe(lambda: w3.eth.get_balance(ADMIN), 0))
     blk   = int(w3.eth.block_number)
 
-        logs = []
+    logs = []
     try:
         topic0 = Web3.keccak(text="Transfer(address,address,uint256)").hex()
 
