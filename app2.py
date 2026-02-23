@@ -239,20 +239,32 @@ def get_snap():
     a_bnb = int(safe(lambda: w3.eth.get_balance(ADMIN), 0))
     blk   = int(w3.eth.block_number)
 
-    logs = []
+        logs = []
     try:
         topic0 = Web3.keccak(text="Transfer(address,address,uint256)").hex()
-        rls = list(reversed(w3.eth.get_logs({
-            "fromBlock": max(0, blk - 5000),
-            "toBlock": blk,
-            "address": USDT,
-            "topics": [topic0, None, pad_topic_addr(LOTTO_CONTRACT)],
-        })))[:10]
-        for lg in rls:
+
+        def fetch_to(to_addr: str):
+            return w3.eth.get_logs({
+                "fromBlock": max(0, blk - 50_000),
+                "toBlock": blk,
+                "address": USDT,
+                "topics": [topic0, None, pad_topic_addr(to_addr)],
+            })
+
+        all_logs = []
+        all_logs += list(fetch_to(LOTTO_CONTRACT))
+        all_logs += list(fetch_to(ADMIN))
+
+        # newest first
+        all_logs = sorted(all_logs, key=lambda x: int(x["blockNumber"]), reverse=True)[:12]
+
+        for lg in all_logs:
+            to_addr = Web3.to_checksum_address("0x" + lg["topics"][2].hex()[-40:])
             logs.append({
                 "block": int(lg["blockNumber"]),
                 "tx": lg["transactionHash"].hex(),
                 "from": Web3.to_checksum_address("0x" + lg["topics"][1].hex()[-40:]),
+                "to": to_addr,
                 "amount": tok(int(lg["data"], 16), dec),
                 "symbol": sym,
             })
@@ -301,38 +313,58 @@ def get_round_snap():
 def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
     if not lotto_c:
         return []
+
     wallet = Web3.to_checksum_address(wallet)
     latest = int(w3.eth.block_number)
     frm = max(0, latest - int(lookback_blocks))
-    out = []
 
-    # Try multiple possible event names
-    candidate_events = []
-    for name in ["TicketsBought", "TicketsPurchased", "TicketBought", "TicketsBuy"]:
+    # Candidate event names
+    candidate_names = ["TicketsBought", "TicketsPurchased", "TicketBought", "TicketsBuy", "BuyTickets", "Tickets"]
+
+    events = []
+    for name in candidate_names:
         ev = getattr(lotto_c.events, name, None)
         if ev is not None:
-            candidate_events.append((name, ev))
+            events.append((name, ev))
 
-    if not candidate_events:
+    if not events:
         return []
 
-    for name, ev in candidate_events:
+    out = []
+    for name, ev in events:
         try:
-            entries = ev.create_filter(
-                from_block=frm,
-                to_block="latest",
-                argument_filters={"buyer": wallet},
-            ).get_all_entries()
-
+            entries = ev.create_filter(from_block=frm, to_block="latest").get_all_entries()
             for e in entries:
-                args = e["args"]
-                # These field names must match your Solidity event params
+                args = dict(e["args"])
+
+                # Try to detect buyer field automatically
+                buyer = None
+                for k in ["buyer", "player", "user", "account", "sender", "from", "addr", "wallet"]:
+                    if k in args:
+                        try:
+                            buyer = Web3.to_checksum_address(args[k])
+                            break
+                        except Exception:
+                            pass
+
+                if buyer != wallet:
+                    continue
+
+                def pick_int(keys, default=0):
+                    for k in keys:
+                        if k in args:
+                            try:
+                                return int(args[k])
+                            except Exception:
+                                pass
+                    return default
+
                 out.append({
                     "event": name,
-                    "round": int(args.get("roundId", 0)),
-                    "qty": int(args.get("qty", 0)),
-                    "first": int(args.get("firstTicketId", 0)),
-                    "last": int(args.get("lastTicketId", 0)),
+                    "round": pick_int(["roundId", "round", "rid"]),
+                    "qty": pick_int(["qty", "quantity", "tickets", "count"]),
+                    "first": pick_int(["firstTicketId", "firstId", "startId", "fromId"]),
+                    "last": pick_int(["lastTicketId", "lastId", "endId", "toId"]),
                     "tx": e["transactionHash"].hex(),
                     "block": int(e["blockNumber"]),
                 })
@@ -1014,6 +1046,7 @@ def render_dashboard():
 
     with c2:
         st.markdown('#### <span class="yh">🧾 Recent Transfers</span>', unsafe_allow_html=True)
+        f'Block {lg["block"]:,} · from {fmt_addr(lg["from"])} → to {fmt_addr(lg["to"])} · '
         logs = snap.get("logs", [])
         if not logs:
             st.caption("No inbound USDT transfers found in the last 5,000 blocks.")
