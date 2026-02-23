@@ -730,9 +730,10 @@ def render_landing():
 
     if st.session_state.show_manual and not st.session_state.wallet:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('#### <span class="yh">Connect Wallet (Paste Address)</span>', unsafe_allow_html=True)
-        st.markdown('<div class="muted">Paste your address to view your tickets and activity in the dashboard.</div>', unsafe_allow_html=True)
-        st.text_input("Wallet address", key="manual_input", placeholder="0x1234…abcd", label_visibility="collapsed")
+        st.markdown('#### <span class="yh">Connect Read-Only Wallet</span>', unsafe_allow_html=True)
+        st.markdown('<div class="muted">Paste an address to unlock the dashboard. Buying tickets requires MetaMask.</div>', unsafe_allow_html=True)
+        st.text_input("Wallet address", key="manual_input",
+                      placeholder="0x1234…abcd", label_visibility="collapsed")
         b1, b2, _ = st.columns([1, 1, 4], gap="small")
         with b1:
             st.button("✅ Use This Address", on_click=submit_manual, key="manual_submit")
@@ -751,8 +752,8 @@ def render_landing():
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="heroSub">Use Streamlit for live stats and auditing. '
-            'For buying tickets (MetaMask signing), open the Buy Page.</div>',
+            '<div class="heroSub">Watch the pool live, track ticket ranges on-chain, '
+            'and verify every purchase with public events. Connect your wallet to unlock the dashboard.</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -762,11 +763,6 @@ def render_landing():
             f'Block: <b style="color:#e9eef7">{snap["block"]:,}</b></div>',
             unsafe_allow_html=True,
         )
-
-        st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="btnrow">', unsafe_allow_html=True)
-        st.link_button("🦊 Open Buy Page (MetaMask)", st.session_state.buy_dapp_url)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with right:
         st.markdown(
@@ -794,47 +790,55 @@ def render_landing():
             unsafe_allow_html=True,
         )
 
+        st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
+
     st.markdown('<div style="height:24px"></div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3, gap="medium")
-
     with c1:
         st.markdown(
             f"""
 <div class="info-card">
-  <div class="info-card-icon">📊</div>
-  <div class="info-card-title">Dashboard</div>
+  <div class="info-card-icon">💡</div>
+  <div class="info-card-title">The Idea</div>
   <div class="info-card-body">
-    Live pool, rounds, transfers, and ticket history.
-    Paste your wallet address to see your activity.
+    A lottery should be <b>provable</b> — not just "trust us".
+    LOTTO surfaces live on-chain pool data, ticket purchases, and
+    round states so anyone can verify every draw independently.
   </div>
 </div>""",
             unsafe_allow_html=True,
         )
     with c2:
         st.markdown(
-            f"""
+            """
 <div class="info-card">
-  <div class="info-card-icon">🦊</div>
-  <div class="info-card-title">Buy Page</div>
+  <div class="info-card-icon">⚙️</div>
+  <div class="info-card-title">How It Works</div>
   <div class="info-card-body">
-    A separate mini DApp page handles MetaMask connection and signing
-    (Approve USDT + Buy Tickets).
+    <span class="step">1</span> Connect your wallet<br/>
+    <span class="step">2</span> Approve USDT spend<br/>
+    <span class="step">3</span> Buy tickets &amp; receive a range<br/>
+    <span class="step">4</span> Draw happens on-chain automatically
   </div>
 </div>""",
             unsafe_allow_html=True,
         )
     with c3:
         st.markdown(
-            f"""
+            """
 <div class="info-card">
-  <div class="info-card-icon">🔎</div>
-  <div class="info-card-title">Verify</div>
+  <div class="info-card-icon">🦊</div>
+  <div class="info-card-title">Wallets</div>
   <div class="info-card-body">
-    Everything is on-chain and auditable with public events and BscScan.
+    Use <b>MetaMask</b> to buy tickets and sign transactions.<br/><br/>
+    Use <b>Manual Address</b> to view the dashboard in read-only
+    mode without connecting a wallet.
   </div>
 </div>""",
             unsafe_allow_html=True,
         )
+
+    st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
 
     st.markdown(
         f'<div class="muted" style="text-align:center; padding:18px 0; font-size:11px;">'
