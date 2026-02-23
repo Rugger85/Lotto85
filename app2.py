@@ -94,7 +94,7 @@ if missing:
 ACCENT = "#62c1e5"
 
 # Mini dApp URL (served by python http.server)
-BUY_DAPP_URL_DEFAULT = "https://Rugger85.github.io/Lotto85/wallet_buy.html"
+BUY_DAPP_URL_DEFAULT = "https://rugger85.github.io/Lotto85/wallet_buy.html"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Web3 connect
