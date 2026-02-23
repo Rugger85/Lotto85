@@ -1046,7 +1046,7 @@ def render_dashboard():
 
     with c2:
         st.markdown('#### <span class="yh">🧾 Recent Transfers</span>', unsafe_allow_html=True)
-        f'Block {lg["block"]:,} · from {fmt_addr(lg["from"])} → to {fmt_addr(lg["to"])} · '
+        
         logs = snap.get("logs", [])
         if not logs:
             st.caption("No inbound USDT transfers found in the last 5,000 blocks.")
@@ -1056,7 +1056,7 @@ def render_dashboard():
                     f'<div class="tx-row">'
                     f'<div class="tx-amount">+{lg["amount"]:.2f} {lg["symbol"]}</div>'
                     f'<div class="tx-meta">'
-                    f'Block {lg["block"]:,} · from {fmt_addr(lg["from"])} · '
+                    f'Block {lg["block"]:,} · from {fmt_addr(lg["from"])} → to {fmt_addr(lg["to"])} · '
                     f'<a href="https://bscscan.com/tx/{lg["tx"]}" target="_blank">'
                     f'{fmt_addr(lg["tx"])} ↗</a>'
                     f'</div></div>',
