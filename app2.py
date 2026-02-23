@@ -318,62 +318,39 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
     latest = int(w3.eth.block_number)
     frm = max(0, latest - int(lookback_blocks))
 
-    # Candidate event names
-    candidate_names = ["TicketsBought", "TicketsPurchased", "TicketBought", "TicketsBuy", "BuyTickets", "Tickets"]
-
-    events = []
-    for name in candidate_names:
-        ev = getattr(lotto_c.events, name, None)
-        if ev is not None:
-            events.append((name, ev))
-
-    if not events:
-        return []
-
     out = []
-    for name, ev in events:
+    ev = lotto_c.events.TicketsBought
+
+    try:
+        flt = ev.create_filter(
+            fromBlock=frm,
+            toBlock="latest",
+            argument_filters={"buyer": wallet},
+        )
+        entries = flt.get_all_entries()
+    except Exception:
+        # RPC fallback: fetch all, filter locally
         try:
-            entries = ev.create_filter(from_block=frm, to_block="latest").get_all_entries()
-            for e in entries:
-                args = dict(e["args"])
-
-                # Try to detect buyer field automatically
-                buyer = None
-                for k in ["buyer", "player", "user", "account", "sender", "from", "addr", "wallet"]:
-                    if k in args:
-                        try:
-                            buyer = Web3.to_checksum_address(args[k])
-                            break
-                        except Exception:
-                            pass
-
-                if buyer != wallet:
-                    continue
-
-                def pick_int(keys, default=0):
-                    for k in keys:
-                        if k in args:
-                            try:
-                                return int(args[k])
-                            except Exception:
-                                pass
-                    return default
-
-                out.append({
-                    "event": name,
-                    "round": pick_int(["roundId", "round", "rid"]),
-                    "qty": pick_int(["qty", "quantity", "tickets", "count"]),
-                    "first": pick_int(["firstTicketId", "firstId", "startId", "fromId"]),
-                    "last": pick_int(["lastTicketId", "lastId", "endId", "toId"]),
-                    "tx": e["transactionHash"].hex(),
-                    "block": int(e["blockNumber"]),
-                })
+            flt = ev.create_filter(fromBlock=frm, toBlock="latest")
+            entries = flt.get_all_entries()
+            entries = [e for e in entries if Web3.to_checksum_address(e["args"]["buyer"]) == wallet]
         except Exception:
-            pass
+            return []
+
+    for e in entries:
+        args = e["args"]
+        out.append({
+            "event": "TicketsBought",
+            "round": int(args["roundId"]),
+            "qty": int(args["qty"]),
+            "first": int(args["firstTicketId"]),
+            "last": int(args["lastTicketId"]),
+            "tx": e["transactionHash"].hex(),
+            "block": int(e["blockNumber"]),
+        })
 
     out.sort(key=lambda x: x["block"], reverse=True)
     return out
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state
@@ -1046,19 +1023,27 @@ def render_dashboard():
 
     with c2:
         st.markdown('#### <span class="yh">🧾 Recent Transfers</span>', unsafe_allow_html=True)
-        
-        logs = snap.get("logs", [])
+        logs = snap.get("logs", []) or []
+    
         if not logs:
             st.caption("No inbound USDT transfers found in the last 5,000 blocks.")
         else:
             for lg in logs:
+                amt = float(lg.get("amount", 0.0))
+                sym2 = lg.get("symbol", sym)
+                blk2 = int(lg.get("block", 0))
+                frm2 = lg.get("from", "0x0")
+                tx2  = lg.get("tx", "")
+    
+                # show tiny transfers properly
+                pretty = f"{amt:,.6f}" if amt >= 0.01 else f"{amt:.12f}".rstrip("0").rstrip(".")
+    
                 st.markdown(
                     f'<div class="tx-row">'
-                    f'<div class="tx-amount">+{lg["amount"]:.2f} {lg["symbol"]}</div>'
+                    f'<div class="tx-amount">+{pretty} {sym2}</div>'
                     f'<div class="tx-meta">'
-                    f'Block {lg["block"]:,} · from {fmt_addr(lg["from"])} → to {fmt_addr(lg["to"])} · '
-                    f'<a href="https://bscscan.com/tx/{lg["tx"]}" target="_blank">'
-                    f'{fmt_addr(lg["tx"])} ↗</a>'
+                    f'Block {blk2:,} · from {fmt_addr(frm2)} · '
+                    f'<a href="https://bscscan.com/tx/{tx2}" target="_blank">{fmt_addr(tx2)} ↗</a>'
                     f'</div></div>',
                     unsafe_allow_html=True,
                 )
