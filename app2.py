@@ -1,8 +1,5 @@
 from __future__ import annotations
-# ─────────────────────────────────────────────────────────────────────────────
-# Streamlit setup
-# ─────────────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
+
 import os, json
 from datetime import datetime, timezone
 
@@ -24,6 +21,12 @@ try:
 except Exception:
     HAS_JS = False
 import os, json, streamlit as st
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Streamlit setup
+# ─────────────────────────────────────────────────────────────────────────────
+st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
+
 
 abi_path = st.secrets.get("LOTTO_ABI_PATH", "lotto_abi.json")
 st.write("ABI path:", abi_path)
