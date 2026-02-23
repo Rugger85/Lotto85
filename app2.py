@@ -61,7 +61,7 @@ LOTTO_CONTRACT_ADDR = cfg("LOTTO_CONTRACT", "")
 USDT_ADDRESS        = cfg("USDT_ADDRESS", "")
 ADMIN_WALLET        = cfg("ADMIN_WALLET", "")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOTTO_ABI_PATH = os.path.join(BASE_DIR, cfg("LOTTO_ABI_PATH", "lotto_abi.json"))
+LOTTO_ABI_PATH = cfg("LOTTO_ABI_PATH", "lotto_abi.json")
 
 # Optional: add extra RPCs in secrets as BSC_RPC_2, BSC_RPC_3...
 RPCS = [BSC_RPC_PRIMARY]
@@ -138,10 +138,14 @@ ERC20_ABI = [
 
 usdt_c = w3.eth.contract(address=USDT, abi=ERC20_ABI)
 
+from pathlib import Path
+
 LOTTO_ABI = None
-if os.path.exists(LOTTO_ABI_PATH):
+abi_path = Path(__file__).parent / LOTTO_ABI_PATH  # LOTTO_ABI_PATH like "lotto_abi.json"
+
+if abi_path.exists():
     try:
-        raw = json.load(open(LOTTO_ABI_PATH, "r", encoding="utf-8"))
+        raw = json.loads(abi_path.read_text(encoding="utf-8"))
         LOTTO_ABI = raw.get("abi", raw)
     except Exception:
         LOTTO_ABI = None
@@ -301,21 +305,41 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
     latest = int(w3.eth.block_number)
     frm = max(0, latest - int(lookback_blocks))
     out = []
-    try:
-        evs = lotto_c.events.TicketsBought.create_filter(
-            from_block=frm, to_block="latest",
-            argument_filters={"buyer": wallet}
-        ).get_all_entries()
-        for ev in evs:
-            args = ev["args"]
-            out.append({
-                "round": int(args["roundId"]), "qty": int(args["qty"]),
-                "first": int(args["firstTicketId"]), "last": int(args["lastTicketId"]),
-                "tx": ev["transactionHash"].hex(), "block": int(ev["blockNumber"]),
-            })
-        out.sort(key=lambda x: x["block"], reverse=True)
-    except Exception:
-        pass
+
+    # Try multiple possible event names
+    candidate_events = []
+    for name in ["TicketsBought", "TicketsPurchased", "TicketBought", "TicketsBuy"]:
+        ev = getattr(lotto_c.events, name, None)
+        if ev is not None:
+            candidate_events.append((name, ev))
+
+    if not candidate_events:
+        return []
+
+    for name, ev in candidate_events:
+        try:
+            entries = ev.create_filter(
+                from_block=frm,
+                to_block="latest",
+                argument_filters={"buyer": wallet},
+            ).get_all_entries()
+
+            for e in entries:
+                args = e["args"]
+                # These field names must match your Solidity event params
+                out.append({
+                    "event": name,
+                    "round": int(args.get("roundId", 0)),
+                    "qty": int(args.get("qty", 0)),
+                    "first": int(args.get("firstTicketId", 0)),
+                    "last": int(args.get("lastTicketId", 0)),
+                    "tx": e["transactionHash"].hex(),
+                    "block": int(e["blockNumber"]),
+                })
+        except Exception:
+            pass
+
+    out.sort(key=lambda x: x["block"], reverse=True)
     return out
 
 
