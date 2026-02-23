@@ -662,8 +662,8 @@ def render_nav():
                 st.markdown("</div>", unsafe_allow_html=True)
 
         # Optional: hidden settings for the buy URL
-        with st.expander("⚙️ Settings", expanded=False):
-            st.text_input("Buy page URL", key="buy_dapp_url")
+        # with st.expander("⚙️ Settings", expanded=False):
+        #     st.text_input("Buy page URL", key="buy_dapp_url")
 
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
