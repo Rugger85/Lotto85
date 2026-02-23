@@ -796,7 +796,8 @@ def render_landing():
             f'Block: <b style="color:#e9eef7">{snap["block"]:,}</b></div>',
             unsafe_allow_html=True,
         )
-
+    price = lotto_c.functions.ticketPrice().call()
+    st.write(price)
     with right:
         st.markdown(
             f"""
