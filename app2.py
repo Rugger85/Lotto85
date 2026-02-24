@@ -207,7 +207,7 @@ def get_round_snap():
 # Tickets: topic0-only logs, decode, filter buyer in Python
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60)
-def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 2_000_000):
+def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 600_000):
     if not lotto_c or not LOTTO_ABI:
         return [], {"err": "no_abi_or_contract"}
 
@@ -225,85 +225,112 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 2_000_000):
 
     topic0 = _topic0_from_event_abi(ev_abi)
 
-    try:
-        logs = w3.eth.get_logs({
-            "fromBlock": frm,
-            "toBlock": "latest",
-            "address": LOTTO_ADDR,   # make sure this is the same used to buy
-            "topics": [topic0],
-        })
-    except Exception as e:
-        return [], {"err": "get_logs_failed", "msg": str(e)}
+    # --- Chunking controls ---
+    # Start bigger, auto-shrink on provider limits
+    chunk = 50_000
+    min_chunk = 2_000
 
     out = []
     decode_errors = 0
-    sample_err = None
     decoded_any = 0
+    raw_logs_total = 0
+    sample_err = None
 
-    for lg in logs:
+    def find_buyer_addr(args) -> str | None:
+        # first address-ish field
+        for _, v in dict(args).items():
+            if isinstance(v, str) and v.startswith("0x") and len(v) == 42:
+                return v
+        return None
+
+    def get_int(args, name_candidates, idx_fallback):
+        for nm in name_candidates:
+            if nm in args:
+                return int(args[nm])
         try:
-            decoded = lotto_c.events.TicketsBought().process_log(lg)
-            decoded_any += 1
-            args = decoded["args"]
+            key = ev_abi["inputs"][idx_fallback]["name"]
+            return int(args[key])
+        except Exception:
+            return 0
 
-            # ✅ Find buyer address without assuming the name is "buyer"
-            buyer_addr = None
-            for k, v in dict(args).items():
-                if isinstance(v, str) and v.startswith("0x") and len(v) == 42:
-                    # choose the first address-ish field
-                    buyer_addr = v
-                    break
+    start = frm
+    while start <= latest:
+        end = min(latest, start + chunk)
 
-            if not buyer_addr:
-                continue
-
-            if Web3.to_checksum_address(buyer_addr) != wallet:
-                continue
-
-            # ✅ Extract numbers by position fallback if names differ
-            # We'll try common keys first, else use ev_abi input order
-            def get_int(name_candidates, idx_fallback):
-                for nm in name_candidates:
-                    if nm in args:
-                        return int(args[nm])
-                # fallback: positional by ABI order
-                try:
-                    key = ev_abi["inputs"][idx_fallback]["name"]
-                    return int(args[key])
-                except Exception:
-                    return 0
-
-            round_id = get_int(["roundId", "round", "rid"], 1)
-            qty      = get_int(["qty", "quantity", "count"], 2)
-            first_id = get_int(["firstTicketId", "first", "startId", "fromId"], 3)
-            last_id  = get_int(["lastTicketId", "last", "endId", "toId"], 4)
-
-            out.append({
-                "round": round_id,
-                "qty": qty,
-                "first": first_id,
-                "last": last_id,
-                "tx": lg["transactionHash"].hex(),
-                "block": int(lg["blockNumber"]),
+        try:
+            logs = w3.eth.get_logs({
+                "fromBlock": start,
+                "toBlock": end,
+                "address": LOTTO_ADDR,
+                "topics": [topic0],
             })
+            raw_logs_total += len(logs)
+
+            for lg in logs:
+                try:
+                    decoded = lotto_c.events.TicketsBought().process_log(lg)
+                    decoded_any += 1
+                    args = decoded["args"]
+
+                    buyer = find_buyer_addr(args)
+                    if not buyer:
+                        continue
+                    if Web3.to_checksum_address(buyer) != wallet:
+                        continue
+
+                    round_id = get_int(args, ["roundId", "round", "rid"], 1)
+                    qty      = get_int(args, ["qty", "quantity", "count"], 2)
+                    first_id = get_int(args, ["firstTicketId", "first", "startId", "fromId"], 3)
+                    last_id  = get_int(args, ["lastTicketId", "last", "endId", "toId"], 4)
+
+                    out.append({
+                        "round": round_id,
+                        "qty": qty,
+                        "first": first_id,
+                        "last": last_id,
+                        "tx": lg["transactionHash"].hex(),
+                        "block": int(lg["blockNumber"]),
+                    })
+                except Exception as e:
+                    decode_errors += 1
+                    if sample_err is None:
+                        sample_err = str(e)
+
+            start = end + 1
 
         except Exception as e:
-            decode_errors += 1
-            if sample_err is None:
-                sample_err = str(e)
+            msg = str(e)
+            # Provider limit hit => shrink chunk and retry same start..end
+            if "limit exceeded" in msg.lower() or "-32005" in msg:
+                if chunk <= min_chunk:
+                    return [], {
+                        "err": "limit_exceeded_even_min_chunk",
+                        "fromBlock": frm,
+                        "toBlock": latest,
+                        "raw_logs_total": raw_logs_total,
+                        "decoded_any": decoded_any,
+                        "decode_errors": decode_errors,
+                        "sample_error": sample_err,
+                        "chunk": chunk,
+                    }
+                chunk = max(min_chunk, chunk // 2)
+                continue
+            return [], {"err": "get_logs_failed", "msg": msg}
 
     out.sort(key=lambda x: x["block"], reverse=True)
-    debug = {
+    dbg = {
+        "err": None,
         "fromBlock": frm,
         "toBlock": latest,
-        "raw_logs": len(logs),
+        "raw_logs_total": raw_logs_total,
         "decoded_any": decoded_any,
         "decode_errors": decode_errors,
         "sample_error": sample_err,
+        "final_chunk": chunk,
         "topic0": topic0,
+        "matches": len(out),
     }
-    return out, debug
-
+    return out, dbg
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state
 # ─────────────────────────────────────────────────────────────────────────────
