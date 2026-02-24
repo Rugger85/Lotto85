@@ -1,82 +1,72 @@
 from __future__ import annotations
 
-import os, json
+import os, json, time
 from pathlib import Path
 from datetime import datetime, timezone
+
 import requests
 import streamlit as st
 import plotly.graph_objects as go
 from web3 import Web3
 
-# Optional local dev
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    pass
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Page
+# ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Config helpers
+# Config
 # ─────────────────────────────────────────────────────────────────────────────
 def cfg(key: str, default: str = "") -> str:
     try:
-        if key in st.secrets:
-            v = st.secrets[key]
-            return str(v) if v is not None else default
+        if key in st.secrets and st.secrets[key] is not None:
+            return str(st.secrets[key])
     except Exception:
         pass
     try:
-        if "secrets" in st.secrets and key in st.secrets["secrets"]:
-            v = st.secrets["secrets"][key]
-            return str(v) if v is not None else default
+        if "secrets" in st.secrets and key in st.secrets["secrets"] and st.secrets["secrets"][key] is not None:
+            return str(st.secrets["secrets"][key])
     except Exception:
         pass
     return os.getenv(key, default)
 
-CHAIN_ID            = int(cfg("CHAIN_ID", "56"))
-BSC_RPC_PRIMARY     = cfg("BSC_RPC", "")
-LOTTO_CONTRACT_ADDR = cfg("LOTTO_CONTRACT", "")
-USDT_ADDRESS        = cfg("USDT_ADDRESS", "")
-ADMIN_WALLET        = cfg("ADMIN_WALLET", "")
-LOTTO_ABI_PATH      = cfg("LOTTO_ABI_PATH", "lotto_abi.json")
-
-BUY_DAPP_URL_DEFAULT = cfg("BUY_DAPP_URL", "https://rugger85.github.io/Lotto85/wallet_buy.html")
+CHAIN_ID       = int(cfg("CHAIN_ID", "56"))
+BSC_RPC        = cfg("BSC_RPC", "")
+LOTTO_RAW      = cfg("LOTTO_CONTRACT", "")
+USDT_RAW       = cfg("USDT_ADDRESS", "")
+ADMIN_RAW      = cfg("ADMIN_WALLET", "")
+ABI_PATH       = cfg("LOTTO_ABI_PATH", "lotto_abi.json")
+BUY_URL        = cfg("BUY_DAPP_URL", "https://rugger85.github.io/Lotto85/wallet_buy.html")
+ETHERSCAN_KEY  = cfg("ETHERSCAN_API_KEY", "")
 
 missing = [k for k, v in {
-    "BSC_RPC": BSC_RPC_PRIMARY,
-    "LOTTO_CONTRACT": LOTTO_CONTRACT_ADDR,
-    "USDT_ADDRESS": USDT_ADDRESS,
-    "ADMIN_WALLET": ADMIN_WALLET,
+    "BSC_RPC": BSC_RPC,
+    "LOTTO_CONTRACT": LOTTO_RAW,
+    "USDT_ADDRESS": USDT_RAW,
+    "ADMIN_WALLET": ADMIN_RAW,
 }.items() if not v]
-
 if missing:
-    st.error("Missing required config in secrets/env: " + ", ".join(missing))
+    st.error("Missing required config in Streamlit secrets/env: " + ", ".join(missing))
     st.stop()
 
-LOTTO_ADDR = Web3.to_checksum_address(LOTTO_CONTRACT_ADDR)
-USDT_ADDR  = Web3.to_checksum_address(USDT_ADDRESS)
-ADMIN_ADDR = Web3.to_checksum_address(ADMIN_WALLET)
+LOTTO_ADDR = Web3.to_checksum_address(LOTTO_RAW)
+USDT_ADDR  = Web3.to_checksum_address(USDT_RAW)
+ADMIN_ADDR = Web3.to_checksum_address(ADMIN_RAW)
 
 ACCENT = "#62c1e5"
-net_badge = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
+NET_BADGE = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Web3 connect (try primary + extra + public)
+# Web3 connect (primary + public fallbacks)
 # ─────────────────────────────────────────────────────────────────────────────
-RPCS = [BSC_RPC_PRIMARY]
-for k in ["BSC_RPC_2", "BSC_RPC_3", "BSC_RPC_4", "BSC_RPC_5"]:
-    v = cfg(k, "")
-    if v:
-        RPCS.append(v)
-
-RPCS += [
+RPCS = [BSC_RPC] + [
+    cfg("BSC_RPC_2", ""), cfg("BSC_RPC_3", ""), cfg("BSC_RPC_4", ""), cfg("BSC_RPC_5", ""),
     "https://bsc-dataseed.binance.org/",
     "https://bsc-dataseed1.binance.org/",
     "https://bsc-dataseed2.binance.org/",
     "https://bsc-dataseed3.binance.org/",
 ]
+RPCS = [x for x in RPCS if x]
 
 def connect_web3() -> tuple[Web3 | None, str | None]:
     for rpc in RPCS:
@@ -94,9 +84,9 @@ if not w3:
     st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ABI + contracts
+# ABI + Contracts
 # ─────────────────────────────────────────────────────────────────────────────
-def load_abi_file(path: str):
+def load_abi(path: str):
     p = Path(path)
     if not p.is_absolute():
         p = Path(__file__).parent / path
@@ -109,7 +99,7 @@ def load_abi_file(path: str):
         return raw
     return None
 
-LOTTO_ABI = load_abi_file(LOTTO_ABI_PATH)
+LOTTO_ABI = load_abi(ABI_PATH)
 lotto_c = w3.eth.contract(address=LOTTO_ADDR, abi=LOTTO_ABI) if LOTTO_ABI else None
 
 ERC20_ABI = [
@@ -152,13 +142,13 @@ def ts_short(t: int | None) -> str:
 def state_lbl(s: int) -> str:
     return {0: "🟢 Open", 1: "🔒 Sales Closed", 2: "🎉 Drawn"}.get(int(s), f"State {s}")
 
-def _topic0_from_event_abi(event_abi: dict) -> str:
+def topic0_from_event_abi(event_abi: dict) -> str:
     name = event_abi["name"]
-    types = ",".join([i["type"] for i in event_abi.get("inputs", [])])
+    types = ",".join(i["type"] for i in event_abi.get("inputs", []))
     return Web3.keccak(text=f"{name}({types})").hex()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Cached on-chain snapshots
+# Snapshots
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=15)
 def get_snap():
@@ -171,11 +161,11 @@ def get_snap():
     c_bnb = int(safe(lambda: w3.eth.get_balance(LOTTO_ADDR), 0))
     a_bnb = int(safe(lambda: w3.eth.get_balance(ADMIN_ADDR), 0))
 
-    return dict(
-        block=blk, dec=dec, sym=sym,
-        c_usdt=tok(c_raw, dec), a_usdt=tok(a_raw, dec),
-        c_bnb=bnb(c_bnb), a_bnb=bnb(a_bnb),
-    )
+    return {
+        "block": blk, "dec": dec, "sym": sym,
+        "c_usdt": tok(c_raw, dec), "a_usdt": tok(a_raw, dec),
+        "c_bnb": bnb(c_bnb), "a_bnb": bnb(a_bnb),
+    }
 
 @st.cache_data(ttl=15)
 def get_round_snap():
@@ -192,32 +182,23 @@ def get_round_snap():
         tp_units = safe(lambda: int(lotto_c.functions.ticketPrice().call()))
         dec = int(safe(lambda: usdt_c.functions.decimals().call(), 18))
         sym = safe(lambda: usdt_c.functions.symbol().call(), "USDT")
-        price_str = f"{(tp_units or 0) / 10**dec:,.4f} {sym}" if tp_units is not None else "N/A"
+        price_str = f"{(tp_units or 0) / (10**dec):,.4f} {sym}" if tp_units is not None else "N/A"
 
-        return dict(
-            round_id=rid, state=state, draw_ts=draw_ts, close_ts=close_ts, sold=sold,
-            draw_str=ts(draw_ts), close_str=ts(close_ts),
-            draw_short=ts_short(draw_ts),
-            price_str=price_str,
-        )
+        return {
+            "round_id": rid, "state": state, "sold": sold,
+            "draw_ts": draw_ts, "close_ts": close_ts,
+            "draw_str": ts(draw_ts), "close_str": ts(close_ts),
+            "draw_short": ts_short(draw_ts),
+            "price_str": price_str,
+        }
     except Exception:
         return {}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tickets: topic0-only logs, decode, filter buyer in Python
+# Etherscan API v2 (BNB Chain) -> logs (avoids RPC eth_getLogs limits)
 # ─────────────────────────────────────────────────────────────────────────────
-import requests
-
-def _topic0_from_event_abi(event_abi: dict) -> str:
-    name = event_abi["name"]
-    types = ",".join(i["type"] for i in event_abi.get("inputs", []))
-    return Web3.keccak(text=f"{name}({types})").hex()
-
 @st.cache_data(ttl=120)
 def etherscan_v2_get_logs(chainid: int, address: str, topic0: str, from_block: int, to_block: int, api_key: str):
-    """
-    Etherscan API v2 logs endpoint (works for BNB with chainid=56)
-    """
     url = "https://api.etherscan.io/v2/api"
     params = {
         "chainid": str(chainid),
@@ -233,12 +214,10 @@ def etherscan_v2_get_logs(chainid: int, address: str, topic0: str, from_block: i
     return r.json()
 
 @st.cache_data(ttl=120)
-def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
+def get_tickets_for_wallet(wallet: str, lookback_blocks: int):
     if not lotto_c or not LOTTO_ABI:
         return [], {"err": "no_abi_or_contract"}
-
-    api_key = cfg("ETHERSCAN_API_KEY", "")
-    if not api_key:
+    if not ETHERSCAN_KEY:
         return [], {"err": "missing_etherscan_api_key"}
 
     wallet = Web3.to_checksum_address(wallet)
@@ -248,88 +227,91 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
     event_name = "TicketsBought"
     ev_abi = next((x for x in LOTTO_ABI if isinstance(x, dict) and x.get("type") == "event" and x.get("name") == event_name), None)
     if not ev_abi:
-        return [], {"err": "event_not_in_abi"}
+        return [], {"err": "event_not_in_abi", "event": event_name}
 
-    topic0 = _topic0_from_event_abi(ev_abi)
+    topic0 = topic0_from_event_abi(ev_abi)
 
-    # Etherscan/BNBTrace can still limit big ranges -> scan in chunks
+    # adaptive chunking for API limits
     chunk = 50_000
+    min_chunk = 2_000
     out = []
-    bsc_logs_total = 0
+    api_logs_total = 0
     decoded_any = 0
     decode_errors = 0
     sample_err = None
 
-    def find_buyer_addr(args):
-        # first address-like argument (don’t assume name buyer)
-        for _, v in dict(args).items():
+    def find_buyer(args):
+        # first address-like argument (works even if param name isn't "buyer")
+        for v in dict(args).values():
             if isinstance(v, str) and v.startswith("0x") and len(v) == 42:
-                return v
+                return Web3.to_checksum_address(v)
         return None
 
-    def get_int(args, names, idx):
-        for nm in names:
-            if nm in args:
-                return int(args[nm])
-        try:
-            key = ev_abi["inputs"][idx]["name"]
-            return int(args[key])
-        except Exception:
-            return 0
+    def to_w3_log(lg: dict):
+        return {
+            "address": Web3.to_checksum_address(lg["address"]),
+            "topics": [bytes.fromhex(t[2:]) for t in lg["topics"]],
+            "data": lg["data"],
+            "blockNumber": int(lg["blockNumber"], 16),
+            "transactionHash": bytes.fromhex(lg["transactionHash"][2:]),
+            "transactionIndex": int(lg.get("transactionIndex", "0x0"), 16),
+            "logIndex": int(lg.get("logIndex", "0x0"), 16),
+        }
 
     start = frm
     while start <= latest:
         end = min(latest, start + chunk)
 
-        j = etherscan_v2_get_logs(CHAIN_ID, LOTTO_CONTRACT, topic0, start, end, api_key)
-
-        # Etherscan returns status/message/result
+        j = etherscan_v2_get_logs(CHAIN_ID, LOTTO_ADDR, topic0, start, end, ETHERSCAN_KEY)
         status = str(j.get("status", "0"))
+        msg = str(j.get("message", ""))
+
         if status != "1":
-            msg = str(j.get("message", ""))
-            res = j.get("result")
-            # if "No records found" it's fine; just move on
             if "No records found" in msg:
                 start = end + 1
                 continue
-            # otherwise reduce chunk and retry
-            if chunk > 2_000:
-                chunk = max(2_000, chunk // 2)
+            if chunk > min_chunk:
+                chunk = max(min_chunk, chunk // 2)
                 continue
-            return [], {"err": "etherscan_failed", "message": msg, "result": res, "fromBlock": start, "toBlock": end}
+            return [], {
+                "err": "etherscan_failed",
+                "message": msg,
+                "result": j.get("result"),
+                "fromBlock": start,
+                "toBlock": end,
+                "final_chunk": chunk,
+                "topic0": topic0,
+            }
 
         logs = j.get("result", []) or []
-        bsc_logs_total += len(logs)
+        api_logs_total += len(logs)
 
         for lg in logs:
             try:
-                # Convert API log to web3-like log for decoding
-                w3log = {
-                    "address": Web3.to_checksum_address(lg["address"]),
-                    "topics": [bytes.fromhex(t[2:]) for t in lg["topics"]],
-                    "data": lg["data"],
-                    "blockNumber": int(lg["blockNumber"], 16),
-                    "transactionHash": bytes.fromhex(lg["transactionHash"][2:]),
-                    "transactionIndex": int(lg.get("transactionIndex", "0x0"), 16),
-                    "logIndex": int(lg.get("logIndex", "0x0"), 16),
-                }
-
-                decoded = lotto_c.events.TicketsBought().process_log(w3log)
+                decoded = lotto_c.events.TicketsBought().process_log(to_w3_log(lg))
                 decoded_any += 1
                 args = decoded["args"]
 
-                buyer = find_buyer_addr(args)
-                if not buyer:
-                    continue
-                if Web3.to_checksum_address(buyer) != wallet:
+                buyer = find_buyer(args)
+                if not buyer or buyer != wallet:
                     continue
 
+                # try common arg names; fallback to 0
+                def g_int(*names, default=0):
+                    for nm in names:
+                        if nm in args:
+                            try:
+                                return int(args[nm])
+                            except Exception:
+                                pass
+                    return default
+
                 out.append({
-                    "round": get_int(args, ["roundId", "round", "rid"], 1),
-                    "qty": get_int(args, ["qty", "quantity", "count"], 2),
-                    "first": get_int(args, ["firstTicketId", "first", "startId", "fromId"], 3),
-                    "last": get_int(args, ["lastTicketId", "last", "endId", "toId"], 4),
-                    "tx": "0x" + lg["transactionHash"][2:],
+                    "round": g_int("roundId", "round"),
+                    "qty":   g_int("qty", "quantity"),
+                    "first": g_int("firstTicketId", "first"),
+                    "last":  g_int("lastTicketId", "last"),
+                    "tx":    "0x" + lg["transactionHash"][2:],
                     "block": int(lg["blockNumber"], 16),
                 })
             except Exception as e:
@@ -338,13 +320,14 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
                     sample_err = str(e)
 
         start = end + 1
+        time.sleep(0.15)  # be nice to API
 
     out.sort(key=lambda x: x["block"], reverse=True)
-    dbg = {
+    return out, {
         "err": None,
         "fromBlock": frm,
         "toBlock": latest,
-        "api_logs_total": bsc_logs_total,
+        "api_logs_total": api_logs_total,
         "decoded_any": decoded_any,
         "decode_errors": decode_errors,
         "sample_error": sample_err,
@@ -352,229 +335,176 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
         "final_chunk": chunk,
         "topic0": topic0,
     }
-    return out, dbg
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Session state
+# Session
 # ─────────────────────────────────────────────────────────────────────────────
-defaults = dict(
-    wallet=None,
-    show_manual=False,
-    manual_input="",
-    active_tab="landing",     # landing/dashboard
-    ui_mode="home",           # home/my_tickets
-    buy_dapp_url=BUY_DAPP_URL_DEFAULT,
-    toast=None,
-)
-for k, v in defaults.items():
-    st.session_state.setdefault(k, v)
+st.session_state.setdefault("tab", "landing")          # landing/dashboard
+st.session_state.setdefault("wallet", None)
+st.session_state.setdefault("show_manual", False)
+st.session_state.setdefault("manual_input", "")
+st.session_state.setdefault("ui_mode", "home")         # home/my_tickets
+st.session_state.setdefault("toast", None)
 
-def toast(msg: str, kind="success"):
+def set_toast(kind: str, msg: str):
     st.session_state.toast = (kind, msg)
 
-def render_toasts():
+def render_toast():
     t = st.session_state.toast
     if not t:
         return
     kind, msg = t
-    (st.success if kind == "success" else st.error if kind == "error" else st.warning)(msg)
+    if kind == "success":
+        st.success(msg)
+    elif kind == "warning":
+        st.warning(msg)
+    else:
+        st.error(msg)
     st.session_state.toast = None
 
 def submit_manual():
-    raw = (st.session_state.get("manual_input") or "").strip()
+    raw = (st.session_state.manual_input or "").strip()
     if not raw:
-        toast("Please enter a wallet address.", "warning")
+        set_toast("warning", "Please enter a wallet address.")
         return
     try:
         st.session_state.wallet = Web3.to_checksum_address(raw)
         st.session_state.show_manual = False
         st.session_state.manual_input = ""
-        st.session_state.active_tab = "dashboard"
-        toast("✅ Address saved. Dashboard unlocked.", "success")
+        st.session_state.tab = "dashboard"
+        set_toast("success", "✅ Address saved. Dashboard unlocked.")
         st.rerun()
     except Exception:
-        toast("❌ Invalid address — must be 42 hex chars starting with 0x.", "error")
+        set_toast("error", "❌ Invalid address — must be 42 hex chars starting with 0x.")
 
-def do_disconnect():
+def disconnect():
     st.session_state.wallet = None
-    st.session_state.active_tab = "landing"
     st.session_state.ui_mode = "home"
-    toast("Disconnected.", "warning")
+    st.session_state.tab = "landing"
+    set_toast("warning", "Disconnected.")
     st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# UI visuals (CSS)
+# UI styling (compact)
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
 #MainMenu, header, footer, [data-testid="stToolbar"], [data-testid="stStatusWidget"] {{ display:none !important; }}
-
 [data-testid="stAppViewContainer"] {{
   background:
-    radial-gradient(ellipse 1200px 600px at 12% 14%,  rgba(98,193,229,.12)  0%, transparent 56%),
-    radial-gradient(ellipse  900px 500px at 88% 18%,  rgba(0,190,255,.08)  0%, transparent 55%),
-    radial-gradient(ellipse  900px 500px at 60% 90%,  rgba(190,0,255,.06)  0%, transparent 55%),
+    radial-gradient(ellipse 1200px 600px at 12% 14%, rgba(98,193,229,.12) 0%, transparent 56%),
+    radial-gradient(ellipse  900px 500px at 88% 18%, rgba(0,190,255,.08) 0%, transparent 55%),
+    radial-gradient(ellipse  900px 500px at 60% 90%, rgba(190,0,255,.06) 0%, transparent 55%),
     linear-gradient(180deg, #06080d 0%, #07090f 100%) !important;
-  color: #e9eef7 !important;
+  color:#e9eef7 !important;
 }}
 a {{ color:{ACCENT} !important; text-decoration:none; }}
 a:hover {{ text-decoration:underline; }}
 .yh {{ color:{ACCENT} !important; font-weight:900 !important; }}
 .muted {{ color:rgba(233,238,247,.60); }}
-.white {{ color:#e9eef7 !important; }}
-.hdiv {{ height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent); margin:20px 0; }}
-
+.hdiv {{ height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent); margin:18px 0; }}
 .card {{
   background:rgba(15,19,31,.86);
   border:1px solid rgba(255,255,255,.08);
   border-radius:18px;
-  padding:20px;
+  padding:18px;
   box-shadow:0 20px 55px rgba(0,0,0,.35);
 }}
 .pill {{
   display:inline-block; padding:4px 12px; border-radius:999px;
-  background:rgba(98,193,229,.14);
-  border:1px solid rgba(98,193,229,.28);
-  color:{ACCENT}; font-size:11px; font-weight:900;
-  letter-spacing:.6px; text-transform:uppercase;
+  background:rgba(98,193,229,.14); border:1px solid rgba(98,193,229,.28);
+  color:{ACCENT}; font-size:11px; font-weight:900; letter-spacing:.6px; text-transform:uppercase;
 }}
-.kpi {{ border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.03); border-radius:16px; padding:16px; }}
-.kpi .t {{ font-size:11px; letter-spacing:1px; font-weight:900; color:rgba(233,238,247,.70); text-transform:uppercase; }}
-.kpi .v {{ font-size:26px; font-weight:950; color:{ACCENT}; margin-top:4px; line-height:1.1; }}
-.kpi .s {{ font-size:12px; color:rgba(233,238,247,.62); margin-top:4px; }}
+.stat {{
+  display:inline-flex; flex-direction:column; justify-content:center;
+  padding:8px 14px; border-radius:14px; min-height:42px;
+  background:linear-gradient(135deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.05) 40%, rgba(255,255,255,.09) 100%);
+  border:1px solid rgba(255,255,255,.18);
+}}
+.stat .l {{ font-size:9px; font-weight:900; letter-spacing:1px; text-transform:uppercase; color:rgba(233,238,247,.45); }}
+.stat .v {{ font-size:13px; font-weight:800; color:#e9eef7; margin-top:1px; }}
 .big {{ font-size:44px; font-weight:950; color:{ACCENT}; line-height:1; }}
-
 div.stButton > button {{
   border-radius:14px !important; font-weight:800 !important; font-size:13px !important;
   padding:10px 18px !important; color:#e9eef7 !important;
-  background: linear-gradient(135deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 40%, rgba(255,255,255,.10) 100%) !important;
-  backdrop-filter:blur(18px) saturate(1.6) !important;
+  background:linear-gradient(135deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 40%, rgba(255,255,255,.10) 100%) !important;
   border:1px solid rgba(255,255,255,.22) !important;
 }}
-div.stButton > button:hover, div.stButton > button:focus {{
-  background: linear-gradient(135deg, rgba(98,193,229,.28) 0%, rgba(98,193,229,.10) 40%, rgba(98,193,229,.18) 100%) !important;
+div.stButton > button:hover {{
+  background:linear-gradient(135deg, rgba(98,193,229,.28) 0%, rgba(98,193,229,.10) 40%, rgba(98,193,229,.18) 100%) !important;
   border:1px solid rgba(98,193,229,.55) !important;
 }}
-.btnrow div.stButton > button {{ width:100% !important; }}
-
-.stat-chip {{
-  display:inline-flex; flex-direction:column; justify-content:center;
-  padding:8px 14px; min-height:42px; border-radius:14px;
-  background: linear-gradient(135deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.05) 40%, rgba(255,255,255,.09) 100%);
-  border:1px solid rgba(255,255,255,.20);
-}}
-.stat-chip-label {{ font-size:9px; font-weight:900; letter-spacing:.9px; text-transform:uppercase; color:rgba(233,238,247,.45); }}
-.stat-chip-value {{ font-size:13px; font-weight:800; color:#e9eef7; margin-top:1px; }}
-
-.next-draw {{
-  display:inline-flex; flex-direction:column; justify-content:center;
-  padding:8px 14px; min-height:42px; border-radius:14px;
-  border:1px solid rgba(98,193,229,.28); background:rgba(98,193,229,.08);
-}}
-.next-draw .lbl {{ font-size:9px; font-weight:950; letter-spacing:1px; text-transform:uppercase; color:rgba(233,238,247,.45); }}
-.next-draw .dt {{ font-size:18px; font-weight:1000; color:{ACCENT}; margin-top:1px; line-height:1.05; }}
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Charts
 # ─────────────────────────────────────────────────────────────────────────────
-PRIZE_SPLIT = {
-    "1st (40%)": 40, "2nd (25%)": 25, "3rd (15%)": 15,
-    "4th (10%)": 10, "5th (5%)": 5, "6th (5%)": 5,
-    "Admin (20%)": 20,
-}
-
+PRIZE_SPLIT = {"1st (40%)": 40, "2nd (25%)": 25, "3rd (15%)": 15, "4th (10%)": 10, "5th (5%)": 5, "6th (5%)": 5, "Admin (20%)": 20}
 def donut(split: dict[str, float]):
-    colors = [ACCENT, "#00beff", "#be00ff", "#ff6b35", "#7ae8b0", "#e87a7a", "#444"]
-    fig = go.Figure(go.Pie(
-        labels=list(split.keys()),
-        values=list(split.values()),
-        hole=0.68,
-        sort=False,
-        textinfo="none",
-        marker=dict(colors=colors[:len(split)], line=dict(color="#06080d", width=2)),
-    ))
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=220,
-        showlegend=False,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
+    fig = go.Figure(go.Pie(labels=list(split.keys()), values=list(split.values()), hole=0.68, sort=False, textinfo="none"))
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=220, showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     return fig
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Render blocks
+# Data for UI
 # ─────────────────────────────────────────────────────────────────────────────
 snap  = get_snap()
 rsnap = get_round_snap()
-
-sym       = snap["sym"]
-pool      = snap["c_usdt"]
-abi_ok    = "✅ ABI Loaded" if lotto_c else "⚠️ No ABI"
-stt       = state_lbl(rsnap.get("state", 0)) if rsnap else "—"
-sold      = rsnap.get("sold", "—") if rsnap else "—"
+sym = snap["sym"]
+pool = snap["c_usdt"]
+abi_ok = "✅ ABI Loaded" if lotto_c else "⚠️ No ABI"
+stt = state_lbl(rsnap.get("state", 0)) if rsnap else "—"
+sold = rsnap.get("sold", "—") if rsnap else "—"
 price_str = rsnap.get("price_str", "N/A") if rsnap else "N/A"
 draw_str  = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
 close_str = rsnap.get("close_str", "N/A") if rsnap else "N/A"
 draw_short = rsnap.get("draw_short", "N/A") if rsnap else "N/A"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# UI: Nav + Tabs
+# ─────────────────────────────────────────────────────────────────────────────
 def render_nav():
-    left, right = st.columns([2, 3], gap="small")
-    with left:
+    l, r = st.columns([2, 3], gap="small")
+    with l:
         st.markdown("### 🎰 LOTTO")
         st.markdown(
             f'<div class="muted" style="font-size:12px;">'
-            f'<span class="pill">{net_badge}</span> &nbsp;'
+            f'<span class="pill">{NET_BADGE}</span> &nbsp;'
             f'Block: <b style="color:#e9eef7">{snap["block"]:,}</b> &nbsp;·&nbsp; {abi_ok}'
-            f'</div>',
+            f"</div>",
             unsafe_allow_html=True,
         )
-    with right:
+    with r:
         c1, c2 = st.columns([1.2, 1.0], gap="small")
         with c1:
-            st.markdown('<div class="btnrow">', unsafe_allow_html=True)
-            st.link_button("🦊 Open Buy Page", st.session_state.buy_dapp_url)
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.link_button("🦊 Open Buy Page", BUY_URL)
         with c2:
-            st.markdown('<div class="btnrow">', unsafe_allow_html=True)
             if st.session_state.wallet:
-                st.button("Disconnect ✕", on_click=do_disconnect, key="nav_disc")
+                st.button("Disconnect ✕", on_click=disconnect, key="disc")
             else:
-                st.button("✏️ Manual Address", on_click=lambda: st.session_state.update(show_manual=True), key="nav_manual")
-            st.markdown("</div>", unsafe_allow_html=True)
+                st.button("✏️ Manual Address", on_click=lambda: st.session_state.update(show_manual=True), key="manual_btn")
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 def render_tabs():
     t1, t2, t3 = st.columns([0.9, 1.2, 6], gap="small")
     with t1:
         if st.button("🏠 Home", key="tab_home"):
-            st.session_state.active_tab = "landing"
+            st.session_state.tab = "landing"
             st.rerun()
     with t2:
         if st.button("📊 Dashboard", key="tab_dash"):
-            st.session_state.active_tab = "dashboard"
+            st.session_state.tab = "dashboard"
             st.rerun()
     with t3:
         st.markdown(
             f"""
-<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-  <div class="stat-chip">
-    <span class="stat-chip-label">Pool</span>
-    <span class="stat-chip-value">{pool:,.2f} {sym}</span>
-  </div>
-  <div class="stat-chip">
-    <span class="stat-chip-label">Round</span>
-    <span class="stat-chip-value">{stt}</span>
-  </div>
-  <div class="stat-chip">
-    <span class="stat-chip-label">Contract</span>
-    <span class="stat-chip-value">{fmt_addr(LOTTO_ADDR)}</span>
-  </div>
-  <div class="next-draw">
-    <div class="lbl">Next Draw</div>
-    <div class="dt">{draw_short}</div>
+<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+  <div class="stat"><div class="l">Pool</div><div class="v">{pool:,.2f} {sym}</div></div>
+  <div class="stat"><div class="l">Round</div><div class="v">{stt}</div></div>
+  <div class="stat"><div class="l">Contract</div><div class="v">{fmt_addr(LOTTO_ADDR)}</div></div>
+  <div class="stat" style="border-color:rgba(98,193,229,.28); background:rgba(98,193,229,.08);">
+    <div class="l">Next Draw</div><div class="v" style="color:{ACCENT}; font-weight:950;">{draw_short}</div>
   </div>
 </div>
 """,
@@ -582,126 +512,99 @@ def render_tabs():
         )
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-def render_landing():
-    render_toasts()
+# ─────────────────────────────────────────────────────────────────────────────
+# Screens
+# ─────────────────────────────────────────────────────────────────────────────
+def landing():
+    render_toast()
 
     if st.session_state.show_manual and not st.session_state.wallet:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('#### <span class="yh">Connect Read-Only Wallet</span>', unsafe_allow_html=True)
         st.markdown('<div class="muted">Paste an address to unlock the dashboard.</div>', unsafe_allow_html=True)
         st.text_input("Wallet address", key="manual_input", placeholder="0x1234…abcd", label_visibility="collapsed")
-        b1, b2, _ = st.columns([1, 1, 4], gap="small")
-        with b1:
+        c1, c2, _ = st.columns([1, 1, 4])
+        with c1:
             st.button("✅ Use This Address", on_click=submit_manual, key="manual_submit")
-        with b2:
+        with c2:
             st.button("Cancel", on_click=lambda: st.session_state.update(show_manual=False, manual_input=""), key="manual_cancel")
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-    left, right = st.columns([1.3, 0.95], gap="large")
-    with left:
+    a, b = st.columns([1.35, 1.0], gap="large")
+    with a:
         st.markdown('<span class="pill">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
         st.markdown(
-            f'<div class="white" style="font-size:46px; font-weight:1000; line-height:1.03;">'
+            f'<div style="font-size:46px; font-weight:1000; line-height:1.03;">'
             f'LOTTO<span class="yh">.</span><br/>A verifiable lottery<br/>built on <span class="yh">BSC</span></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="muted" style="font-size:14px; max-width:60ch;">'
-            'Watch the pool live, track ticket purchases on-chain, and verify every draw independently.'
+            '<div class="muted" style="font-size:14px; max-width:62ch;">'
+            'Watch the pool live, track ticket purchases, and verify draws independently.'
             '</div>',
             unsafe_allow_html=True,
         )
-    with right:
-        st.markdown(
-            f"""
-<div class="card">
-  <h4 style="margin:0 0 14px 0; color:{ACCENT}; font-size:18px;">Get Started</h4>
 
-  <div class="kpi" style="margin-bottom:10px;">
-    <div class="t">Total Prize Pool</div>
-    <div class="v">{pool:,.2f} {sym}</div>
-    <div class="s">Live contract USDT balance</div>
-  </div>
+    with b:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(f'<div class="muted" style="font-size:11px; font-weight:900; letter-spacing:1px;">TOTAL PRIZE POOL</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="big">{pool:,.2f} <span style="font-size:16px; opacity:.75">{sym}</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="muted">Tickets sold: <b style="color:#e9eef7">{sold}</b> · Price: <b style="color:#e9eef7">{price_str}</b></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="muted">Sales close: <b style="color:#e9eef7">{close_str}</b></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="muted">Draw: <b style="color:#e9eef7">{draw_str}</b></div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-  <div class="kpi">
-    <div class="t">Round Status</div>
-    <div class="v" style="font-size:20px;">{stt}</div>
-    <div class="s">
-      Tickets sold: <b>{sold}</b> · Price: <b>{price_str}</b><br/>
-      Sales close: <b>{close_str}</b><br/>
-      Draw: <b>{draw_str}</b>
-    </div>
-  </div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
-def render_dashboard():
-    render_toasts()
+def dashboard():
+    render_toast()
     wallet = st.session_state.wallet
-
-    # Debug expander (safe)
-    with st.expander("Debug: ABI / Events", expanded=False):
-        st.write("RPC:", ACTIVE_RPC)
-        st.write("Contract:", LOTTO_ADDR)
-        st.write("Wallet:", wallet)
-        if not LOTTO_ABI:
-            st.warning(f"ABI missing/invalid at: {LOTTO_ABI_PATH}")
-        else:
-            evs = sorted({x.get("name") for x in LOTTO_ABI if isinstance(x, dict) and x.get("type") == "event"})
-            st.write("Events in ABI:", evs)
-            st.write("Expecting event name:", "TicketsBought")
 
     if not wallet:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('### <span class="yh">Connect via Address</span>', unsafe_allow_html=True)
         st.markdown('<div class="muted">Paste your wallet address to view your ticket purchases.</div>', unsafe_allow_html=True)
         st.text_input("Wallet address", key="manual_input", placeholder="0x1234…abcd")
-        b1, b2 = st.columns([1, 1], gap="small")
-        with b1:
-            st.button("✅ Use Address", on_click=submit_manual, key="dash_manual_submit")
-        with b2:
-            st.link_button("🦊 Open Buy Page", st.session_state.buy_dapp_url)
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            st.button("✅ Use Address", on_click=submit_manual, key="dash_use")
+        with c2:
+            st.link_button("🦊 Open Buy Page", BUY_URL)
         st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-    # Header KPI strip (if wallet exists)
     if wallet:
-        hl, hr = st.columns([1.1, 1], gap="large")
+        hl, hr = st.columns([1.15, 1.0], gap="large")
         with hl:
-            rid = rsnap.get("round_id") if rsnap else None
-            st.markdown(f'<span class="pill">{"ROUND #"+str(rid) if rid else "LIVE"}</span>', unsafe_allow_html=True)
-            st.markdown(f'<div class="muted" style="font-size:12px; margin-top:8px;">Wallet: <b style="color:{ACCENT}">✏️ {fmt_addr(wallet)}</b></div>', unsafe_allow_html=True)
-            ba, bb, bc = st.columns(3, gap="small")
-            with ba:
-                st.markdown('<div class="btnrow">', unsafe_allow_html=True)
-                st.link_button("🦊 Buy Tickets (MetaMask)", st.session_state.buy_dapp_url)
-                st.markdown('</div>', unsafe_allow_html=True)
-            with bb:
-                st.markdown('<div class="btnrow">', unsafe_allow_html=True)
-                st.button("🎟️ My Tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"), key="hero_mytickets")
-                st.markdown('</div>', unsafe_allow_html=True)
-            with bc:
-                st.markdown('<div class="btnrow">', unsafe_allow_html=True)
-                if st.button("🔄 Refresh", key="hero_refresh"):
+            st.markdown(f'<div class="muted" style="font-size:12px;">Wallet: <b style="color:{ACCENT}">✏️ {fmt_addr(wallet)}</b></div>', unsafe_allow_html=True)
+            c1, c2, c3 = st.columns(3, gap="small")
+            with c1:
+                st.link_button("🦊 Buy Tickets (MetaMask)", BUY_URL)
+            with c2:
+                st.button("🎟️ My Tickets", on_click=lambda: st.session_state.update(ui_mode="my_tickets"), key="btn_tickets")
+            with c3:
+                if st.button("🔄 Refresh", key="btn_refresh"):
                     st.cache_data.clear()
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown(
+                f'<div class="muted" style="font-size:11px; margin-top:8px;">'
+                f'Contract: <code>{fmt_addr(LOTTO_ADDR)}</code> · USDT: <code>{fmt_addr(USDT_ADDR)}</code> · {abi_ok}'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
         with hr:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="muted" style="font-size:11px; font-weight:900; letter-spacing:1px;">TOTAL PRIZE POOL</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="muted" style="font-size:11px; font-weight:900; letter-spacing:1px;">TOTAL PRIZE POOL</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="big">{pool:,.2f} <span style="font-size:16px; opacity:.75">{sym}</span></div>', unsafe_allow_html=True)
-            ka, kb = st.columns(2, gap="small")
-            with ka:
+            c1, c2 = st.columns(2)
+            with c1:
                 st.metric("Tickets Sold", sold)
                 st.metric("Ticket Price", price_str)
-            with kb:
+            with c2:
                 st.metric("Contract BNB", f"{snap['c_bnb']:.4f}")
                 st.metric("Admin BNB", f"{snap['a_bnb']:.4f}")
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
@@ -712,26 +615,30 @@ def render_dashboard():
         with h1:
             st.markdown('### <span class="yh">🎟️ My Tickets</span>', unsafe_allow_html=True)
         with h2:
-            st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"), key="my_close")
+            st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"), key="close_tickets")
 
-        if not lotto_c:
-            st.warning("ABI not loaded — cannot decode ticket events.")
-            st.markdown(f"[🔍 View on BscScan](https://bscscan.com/address/{LOTTO_ADDR}#events)")
+        if not ETHERSCAN_KEY:
+            st.error("Missing ETHERSCAN_API_KEY in secrets. Add it, then refresh.")
+        elif not lotto_c:
+            st.error(f"ABI not loaded. Check LOTTO_ABI_PATH='{ABI_PATH}' exists in repo.")
         else:
-            lookback = st.slider("Lookback blocks", 10_000, 2_000_000, 600_000, 10_000, key="my_lookback")
+            lookback = st.slider("Lookback blocks", 10_000, 2_000_000, 600_000, 10_000, key="lookback")
             with st.spinner("Fetching ticket purchases…"):
                 purchases, dbg = get_tickets_for_wallet(wallet, int(lookback))
-                if dbg.get("err") == "missing_bscscan_api_key":
-                    st.error("Add BSCSCAN_API_KEY in Streamlit secrets to fetch ticket events (your RPC blocks eth_getLogs).")
-                else:
-                    with st.expander("Debug: TicketsBought scan", expanded=False):
-                        st.write(dbg)
+
+            with st.expander("Debug (safe)", expanded=False):
+                st.write({
+                    "rpc": ACTIVE_RPC,
+                    "contract": LOTTO_ADDR,
+                    "wallet": wallet,
+                    "abi_loaded": bool(LOTTO_ABI),
+                    "events_in_abi": sorted({x.get("name") for x in LOTTO_ABI if isinstance(x, dict) and x.get("type") == "event"}) if LOTTO_ABI else [],
+                    "dbg": dbg,
+                })
 
             if not purchases:
                 st.info("No TicketsBought events found for this wallet in the selected lookback range.")
-                st.caption("If you bought yesterday and this is empty: your event name may not be 'TicketsBought' OR your buy page is using a different contract.")
-                with st.expander("Debug: TicketsBought log scan", expanded=False):
-                    st.write(dbg)
+                st.caption("If you bought yesterday and this is empty: confirm the BUY page used THIS same wallet and THIS contract address.")
             else:
                 st.markdown("#### Purchases")
                 st.dataframe(
@@ -747,9 +654,8 @@ def render_dashboard():
                     hide_index=True,
                 )
 
-                if st.checkbox("Expand to individual ticket IDs (can be large)", value=False, key="my_expand"):
-                    rows = []
-                    total = 0
+                if st.checkbox("Expand to individual ticket IDs (can be large)", value=False, key="expand"):
+                    rows, total = [], 0
                     for p in purchases:
                         total += int(p["qty"])
                         for tid in range(int(p["first"]), int(p["last"]) + 1):
@@ -766,13 +672,13 @@ def render_dashboard():
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-    # Analytics row always
+    # Bottom row (always)
     c1, c2, c3 = st.columns(3, gap="large")
     with c1:
         st.markdown('#### <span class="yh">🏆 Prize Structure</span>', unsafe_allow_html=True)
         st.plotly_chart(donut(PRIZE_SPLIT), use_container_width=True, config={"displayModeBar": False})
     with c2:
-        st.markdown('#### <span class="yh">🧾 Info</span>', unsafe_allow_html=True)
+        st.markdown('#### <span class="yh">ℹ️ Info</span>', unsafe_allow_html=True)
         st.caption(f"Contract: {LOTTO_ADDR}")
         st.caption(f"USDT: {USDT_ADDR}")
         st.caption(f"Admin: {ADMIN_ADDR}")
@@ -785,12 +691,11 @@ def render_dashboard():
         st.metric("BNB (Admin)", f"{snap['a_bnb']:.6f}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Main router
+# Run
 # ─────────────────────────────────────────────────────────────────────────────
 render_nav()
 render_tabs()
-
-if st.session_state.active_tab == "landing":
-    render_landing()
+if st.session_state.tab == "landing":
+    landing()
 else:
-    render_dashboard()
+    dashboard()
