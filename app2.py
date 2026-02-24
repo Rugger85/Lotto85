@@ -16,12 +16,12 @@ from sqlalchemy.engine import Engine
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Global CSS
 # ─────────────────────────────────────────────────────────────────────────────
 ACCENT = "#62c1e5"
-st.markdown(f"""
+st.markdown(
+    f"""
 <style>
 #MainMenu, header, footer,
 [data-testid="stToolbar"],
@@ -109,92 +109,6 @@ div.stButton > button:focus {{
 
 .btnrow div.stButton > button {{ width:100% !important; }}
 
-.tab-active div.stButton > button {{
-  background:
-    linear-gradient(135deg,
-      rgba(98,193,229,.35) 0%,
-      rgba(98,193,229,.12) 45%,
-      rgba(98,193,229,.24) 100%
-    ) !important;
-  border:1px solid rgba(98,193,229,.60) !important;
-  color:{ACCENT} !important;
-  font-weight:950 !important;
-}}
-.tab-inactive div.stButton > button {{
-  background:
-    linear-gradient(135deg,
-      rgba(255,255,255,.10) 0%,
-      rgba(255,255,255,.04) 50%,
-      rgba(255,255,255,.08) 100%
-    ) !important;
-  border:1px solid rgba(255,255,255,.16) !important;
-  color:rgba(233,238,247,.65) !important;
-}}
-
-.stat-chip {{
-  display:inline-flex;
-  flex-direction:column;
-  justify-content:center;
-  padding:8px 14px;
-  min-height:42px;
-  background:
-    linear-gradient(135deg,
-      rgba(255,255,255,.16) 0%,
-      rgba(255,255,255,.05) 40%,
-      rgba(255,255,255,.09) 100%
-    );
-  backdrop-filter:blur(18px) saturate(1.6);
-  -webkit-backdrop-filter:blur(18px) saturate(1.6);
-  border:1px solid rgba(255,255,255,.20);
-  border-radius:14px;
-  line-height:1.25;
-  cursor:default;
-}}
-.stat-chip-label {{
-  font-size:9px;
-  font-weight:900;
-  letter-spacing:.9px;
-  text-transform:uppercase;
-  color:rgba(233,238,247,.45);
-}}
-.stat-chip-value {{
-  font-size:13px;
-  font-weight:800;
-  color:#e9eef7;
-  margin-top:1px;
-}}
-
-.next-draw {{
-  display:inline-flex;
-  flex-direction:column;
-  justify-content:center;
-  padding:8px 14px;
-  min-height:42px;
-  border-radius:14px;
-  border:1px solid rgba(98,193,229,.28);
-  background:rgba(98,193,229,.08);
-}}
-.next-draw .lbl {{
-  font-size:9px;
-  font-weight:950;
-  letter-spacing:1px;
-  text-transform:uppercase;
-  color:rgba(233,238,247,.45);
-}}
-.next-draw .dt {{
-  font-size:18px;
-  font-weight:1000;
-  color:{ACCENT};
-  margin-top:1px;
-  line-height:1.05;
-}}
-.next-draw .cd {{
-  font-size:11px;
-  font-weight:800;
-  color:rgba(233,238,247,.70);
-  margin-top:2px;
-}}
-
 .tx-row {{
   padding:12px 14px;
   border-radius:14px;
@@ -204,14 +118,6 @@ div.stButton > button:focus {{
 }}
 .tx-amount {{ font-weight:950; color:{ACCENT}; }}
 .tx-meta   {{ font-size:12px; color:rgba(233,238,247,.55); margin-top:4px; }}
-
-.ticket-row {{
-  padding:14px;
-  border-radius:16px;
-  border:1px solid rgba(98,193,229,.18);
-  background:rgba(98,193,229,.06);
-  margin-bottom:10px;
-}}
 
 .info-card {{
   background:rgba(15,19,31,.86);
@@ -234,7 +140,10 @@ div.stButton > button:focus {{
   margin-right:6px; vertical-align:middle;
 }}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Config helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -253,6 +162,7 @@ def cfg(key: str, default: str = "") -> str:
         pass
     return os.getenv(key, default)
 
+
 CHAIN_ID       = int(cfg("CHAIN_ID", "56"))
 BSC_RPC        = cfg("BSC_RPC", "")
 LOTTO_ADDR     = cfg("LOTTO_CONTRACT", "")
@@ -261,7 +171,9 @@ ADMIN_ADDR     = cfg("ADMIN_WALLET", "")
 ABI_PATH       = cfg("LOTTO_ABI_PATH", "lotto_abi.json")
 DATABASE_URL   = cfg("DATABASE_URL", cfg("NEON_DSN", ""))
 BUY_DAPP_URL   = cfg("BUY_DAPP_URL", "https://rugger85.github.io/Lotto85/wallet_buy.html")
-ACCENT         = "#62c1e5"
+
+ACTIVE_RPC = BSC_RPC  # used in stats area
+ADMIN = ADMIN_ADDR    # used in stats area
 
 missing = [k for k, v in {
     "BSC_RPC": BSC_RPC,
@@ -269,6 +181,7 @@ missing = [k for k, v in {
     "USDT_ADDRESS": USDT_ADDR,
     "ADMIN_WALLET": ADMIN_ADDR,
 }.items() if not v]
+
 if missing:
     st.error("Missing required secrets/env: " + ", ".join(missing))
     st.stop()
@@ -335,8 +248,27 @@ def ts_short(t: int | None) -> str:
 def state_lbl(s: int) -> str:
     return {0: "🟢 Open", 1: "🔒 Sales Closed", 2: "🎉 Drawn"}.get(int(s), f"State {s}")
 
+def donut(data: dict[str, int]) -> go.Figure:
+    labels = list(data.keys())
+    values = list(data.values())
+    fig = go.Figure(
+        data=[go.Pie(labels=labels, values=values, hole=0.62, sort=False)]
+    )
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=10, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+        height=280,
+    )
+    return fig
+
+def valid_wallet(s: str) -> bool:
+    s = (s or "").strip()
+    return s.startswith("0x") and len(s) == 42 and Web3.is_address(s)
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Cached chain snapshots (safe calls only)
+# Cached chain snapshots
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=15)
 def get_snap():
@@ -367,7 +299,7 @@ def get_round_snap():
 
         dec = int(safe(lambda: usdt_c.functions.decimals().call(), 18))
         sym = safe(lambda: usdt_c.functions.symbol().call(), "USDT")
-        tp_units = safe(lambda: int(lotto_c.functions.ticketPrice().call()))
+        tp_units = safe(lambda: int(lotto_c.functions.ticketPrice().call()), 0)
         price_str = f"{(tp_units or 0) / 10**dec:,.4f} {sym}" if tp_units is not None else "N/A"
 
         return dict(
@@ -381,7 +313,7 @@ def get_round_snap():
         return {}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Neon (LAZY) — ONLY used on Dashboard after wallet connect
+# Neon helpers (ONLY used in Dashboard after wallet)
 # ─────────────────────────────────────────────────────────────────────────────
 def _normalize_db_url(url: str) -> str:
     if not url:
@@ -424,55 +356,6 @@ def db_get_tickets(engine: Engine, buyer: str):
         )).fetchall()
     return rows
 
-def db_insert_from_tx(engine: Engine, tx_hash: str) -> int:
-    tx_hash = tx_hash.strip().lower()
-    if not tx_hash.startswith("0x") or len(tx_hash) != 66:
-        raise ValueError("Invalid tx hash")
-
-    receipt = w3.eth.get_transaction_receipt(tx_hash)
-    if not receipt:
-        raise ValueError("Receipt not found")
-
-    inserted = 0
-    for lg in receipt["logs"]:
-        if Web3.to_checksum_address(lg["address"]) != LOTTO_ADDR:
-            continue
-        try:
-            ev = lotto_c.events.TicketsBought().process_log(lg)
-            args = ev["args"]
-
-            payload = dict(
-                chain_id=int(CHAIN_ID),
-                contract_addr=LOTTO_ADDR.lower(),
-                buyer=Web3.to_checksum_address(args["buyer"]).lower(),
-                round_id=int(args["roundId"]),
-                qty=int(args["qty"]),
-                first_ticket_id=int(args["firstTicketId"]),
-                last_ticket_id=int(args["lastTicketId"]),
-                tx_hash=tx_hash,
-                block_number=int(receipt["blockNumber"]),
-                log_index=int(lg["logIndex"]),
-            )
-
-            upsert = text("""
-                INSERT INTO tickets_bought
-                (chain_id, contract_addr, buyer, round_id, qty, first_ticket_id, last_ticket_id,
-                 tx_hash, block_number, log_index)
-                VALUES
-                (:chain_id, :contract_addr, :buyer, :round_id, :qty, :first_ticket_id, :last_ticket_id,
-                 :tx_hash, :block_number, :log_index)
-                ON CONFLICT DO NOTHING
-            """)
-
-            with engine.begin() as conn:
-                conn.execute(upsert, payload)
-
-            inserted += 1
-        except Exception:
-            continue
-
-    return inserted
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state
 # ─────────────────────────────────────────────────────────────────────────────
@@ -484,27 +367,10 @@ def do_disconnect():
     st.session_state.active_tab = "landing"
     st.rerun()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CSS
-# ─────────────────────────────────────────────────────────────────────────────
-st.markdown(f"""
-<style>
-#MainMenu, header, footer,[data-testid="stToolbar"],[data-testid="stStatusWidget"]{{display:none!important}}
-[data-testid="stAppViewContainer"]{{
-  background:
-    radial-gradient(ellipse 1200px 600px at 12% 14%,  rgba(98,193,229,.12)  0%, transparent 56%),
-    radial-gradient(ellipse  900px 500px at 88% 18%,  rgba(0,190,255,.08)  0%, transparent 55%),
-    radial-gradient(ellipse  900px 500px at 60% 90%,  rgba(190,0,255,.06)  0%, transparent 55%),
-    linear-gradient(180deg,#06080d 0%,#07090f 100%)!important;
-  color:#e9eef7!important
-}}
-a{{color:{ACCENT}!important;text-decoration:none}} a:hover{{text-decoration:underline}}
-.pill{{display:inline-block;padding:4px 12px;border-radius:999px;background:rgba(98,193,229,.14);border:1px solid rgba(98,193,229,.28);color:{ACCENT};font-size:11px;font-weight:900;letter-spacing:.6px;text-transform:uppercase}}
-.card{{background:rgba(15,19,31,.86);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:18px}}
-.hdiv{{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent);margin:18px 0}}
-.big{{font-size:44px;font-weight:950;color:{ACCENT};line-height:1}}
-</style>
-""", unsafe_allow_html=True)
+def set_wallet_and_go(addr: str):
+    st.session_state.wallet = Web3.to_checksum_address(addr.strip())
+    st.session_state.active_tab = "dashboard"
+    st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data
@@ -518,7 +384,6 @@ net_badge = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
 stt = state_lbl(rsnap.get("state", 0)) if rsnap else "—"
 sold = rsnap.get("sold", "—") if rsnap else "—"
 price_str = rsnap.get("price_str", "N/A") if rsnap else "N/A"
-draw_short = rsnap.get("draw_short", "N/A") if rsnap else "N/A"
 close_str = rsnap.get("close_str", "N/A") if rsnap else "N/A"
 draw_str  = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
 
@@ -556,7 +421,7 @@ with t2:
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Landing (UNCHANGED BEHAVIOR)
+# Landing (keep same, plus wallet input)
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.active_tab == "landing":
     left, right = st.columns([1.3, 0.95], gap="large")
@@ -580,8 +445,7 @@ if st.session_state.active_tab == "landing":
             f'Block: <b style="color:#e9eef7">{snap["block"]:,}</b></div>',
             unsafe_allow_html=True,
         )
-    # price = lotto_c.functions.ticketPrice().call()
-    # st.write(price)
+
     with right:
         st.markdown(
             f"""
@@ -609,6 +473,29 @@ if st.session_state.active_tab == "landing":
         )
 
         st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
+
+        # Wallet input to unlock dashboard
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('### <span class="yh">Connect via Address</span>', unsafe_allow_html=True)
+        st.markdown('<div class="muted">Paste your wallet address to view your ticket purchases.</div>', unsafe_allow_html=True)
+
+        addr = st.text_input(
+            "Wallet address",
+            key="manual_wallet",
+            placeholder="0x1234…abcd",
+            label_visibility="visible"
+        )
+        b1, b2 = st.columns([1, 1], gap="small")
+        with b1:
+            if st.button("✅ Use Address", key="use_addr_btn"):
+                if not valid_wallet(addr):
+                    st.error("Please enter a valid wallet address (0x… 42 chars).")
+                else:
+                    set_wallet_and_go(addr)
+        with b2:
+            st.link_button("🦊 Open Buy Page", BUY_DAPP_URL)
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div style="height:24px"></div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3, gap="medium")
@@ -656,12 +543,8 @@ if st.session_state.active_tab == "landing":
             unsafe_allow_html=True,
         )
 
-    st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
-
-    
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Dashboard (Neon tickets only after wallet)
+# Dashboard (ONLY renders analytics when wallet exists)
 # ─────────────────────────────────────────────────────────────────────────────
 else:
     wallet = st.session_state.wallet
@@ -684,7 +567,6 @@ else:
 
     st.subheader("🎟️ My Tickets")
 
-    rows = []
     try:
         rows = db_get_tickets(engine, wallet)
     except Exception as e:
@@ -692,8 +574,7 @@ else:
         st.stop()
 
     if not rows:
-        st.warning("No tickets found")
-        # st.caption("If you bought already: use Backfill below with your tx hash to insert that purchase without scanning logs.")
+        st.warning("No tickets found for this wallet.")
     else:
         st.dataframe(
             [{
@@ -707,16 +588,21 @@ else:
             use_container_width=True,
             hide_index=True,
         )
-PRIZE_SPLIT = {
-"1st (40%)":  40,
-"2nd (25%)":  25,
-"3rd (15%)":  15,
-"4th (10%)":  10,
-"5th (5%)":    5,
-"6th (5%)":    5,
-"Admin (20%)": 20,
-}
- c1, c2, c3 = st.columns(3, gap="large")
+
+    st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
+
+    # Analytics section (only in dashboard + wallet connected)
+    PRIZE_SPLIT = {
+        "1st (40%)":  40,
+        "2nd (25%)":  25,
+        "3rd (15%)":  15,
+        "4th (10%)":  10,
+        "5th (5%)":    5,
+        "6th (5%)":    5,
+        "Admin (20%)": 20,
+    }
+
+    c1, c2, c3 = st.columns(3, gap="large")
 
     with c1:
         st.markdown('#### <span class="yh">🏆 Prize Structure</span>', unsafe_allow_html=True)
@@ -726,30 +612,7 @@ PRIZE_SPLIT = {
 
     with c2:
         st.markdown('#### <span class="yh">🧾 Recent Transfers</span>', unsafe_allow_html=True)
-        logs = snap.get("logs", []) or []
-    
-        if not logs:
-            st.caption("No inbound USDT transfers found in the last 5,000 blocks.")
-        else:
-            for lg in logs:
-                amt = float(lg.get("amount", 0.0))
-                sym2 = lg.get("symbol", sym)
-                blk2 = int(lg.get("block", 0))
-                frm2 = lg.get("from", "0x0")
-                tx2  = lg.get("tx", "")
-    
-                # show tiny transfers properly
-                pretty = f"{amt:,.6f}" if amt >= 0.01 else f"{amt:.12f}".rstrip("0").rstrip(".")
-    
-                st.markdown(
-                    f'<div class="tx-row">'
-                    f'<div class="tx-amount">+{pretty} {sym2}</div>'
-                    f'<div class="tx-meta">'
-                    f'Block {blk2:,} · from {fmt_addr(frm2)} · '
-                    f'<a href="https://bscscan.com/tx/{tx2}" target="_blank">{fmt_addr(tx2)} ↗</a>'
-                    f'</div></div>',
-                    unsafe_allow_html=True,
-                )
+        st.caption("Coming soon (optional on-chain transfer scan).")
 
     with c3:
         st.markdown('#### <span class="yh">📈 Platform Stats</span>', unsafe_allow_html=True)
@@ -759,13 +622,3 @@ PRIZE_SPLIT = {
         st.metric("BNB (Admin)",     f"{snap['a_bnb']:.6f}")
         st.caption(f"RPC: {ACTIVE_RPC}")
         st.caption(f"Admin: {fmt_addr(ADMIN)}")
-    # with st.expander("Backfill a past purchase by Tx Hash (no scanning)", expanded=False):
-    #     tx = st.text_input("Tx hash", placeholder="0x...")
-    #     if st.button("Backfill into Neon"):
-    #         try:
-    #             n = db_insert_from_tx(engine, tx)
-    #             st.success(f"Inserted {n} TicketsBought event(s) from receipt.")
-    #             st.cache_data.clear()
-    #             st.rerun()
-    #         except Exception as e:
-    #             st.error(str(e))
