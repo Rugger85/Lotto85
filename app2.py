@@ -16,6 +16,224 @@ from sqlalchemy.engine import Engine
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Global CSS
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown(f"""
+<style>
+#MainMenu, header, footer,
+[data-testid="stToolbar"],
+[data-testid="stStatusWidget"] {{ display:none !important; }}
+
+[data-testid="stAppViewContainer"] {{
+  background:
+    radial-gradient(ellipse 1200px 600px at 12% 14%,  rgba(98,193,229,.12)  0%, transparent 56%),
+    radial-gradient(ellipse  900px 500px at 88% 18%,  rgba(0,190,255,.08)  0%, transparent 55%),
+    radial-gradient(ellipse  900px 500px at 60% 90%,  rgba(190,0,255,.06)  0%, transparent 55%),
+    linear-gradient(180deg, #06080d 0%, #07090f 100%) !important;
+  color: #e9eef7 !important;
+}}
+
+a {{ color:{ACCENT} !important; text-decoration:none; }}
+a:hover {{ text-decoration:underline; }}
+
+.yh    {{ color:{ACCENT} !important; font-weight:900 !important; }}
+.muted {{ color:rgba(233,238,247,.60); }}
+.white {{ color:#e9eef7 !important; }}
+.hdiv  {{ height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent); margin:20px 0; }}
+
+.card {{
+  background:rgba(15,19,31,.86);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:18px;
+  padding:20px;
+  box-shadow:0 20px 55px rgba(0,0,0,.35);
+}}
+
+.pill {{
+  display:inline-block;
+  padding:4px 12px;
+  border-radius:999px;
+  background:rgba(98,193,229,.14);
+  border:1px solid rgba(98,193,229,.28);
+  color:{ACCENT};
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.6px;
+  text-transform:uppercase;
+}}
+
+.kpi {{ border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.03); border-radius:16px; padding:16px; }}
+.kpi .t {{ font-size:11px; letter-spacing:1px; font-weight:900; color:rgba(233,238,247,.70); text-transform:uppercase; }}
+.kpi .v {{ font-size:26px; font-weight:950; color:{ACCENT}; margin-top:4px; line-height:1.1; }}
+.kpi .s {{ font-size:12px; color:rgba(233,238,247,.62); margin-top:4px; }}
+
+.big {{ font-size:44px; font-weight:950; color:{ACCENT}; line-height:1; }}
+
+.heroTitle {{ font-size:46px; font-weight:1000; line-height:1.03; margin:6px 0 8px; }}
+.heroSub   {{ font-size:14px; color:rgba(233,238,247,.64); max-width:58ch; }}
+
+div.stButton > button {{
+  border-radius:14px !important;
+  font-weight:800 !important;
+  font-size:13px !important;
+  letter-spacing:.2px !important;
+  padding:10px 18px !important;
+  color:#e9eef7 !important;
+  cursor:pointer !important;
+  transition:all .22s ease !important;
+  background:
+    linear-gradient(135deg,
+      rgba(255,255,255,.18) 0%,
+      rgba(255,255,255,.06) 40%,
+      rgba(255,255,255,.10) 100%
+    ) !important;
+  backdrop-filter:blur(18px) saturate(1.6) !important;
+  -webkit-backdrop-filter:blur(18px) saturate(1.6) !important;
+  border:1px solid rgba(255,255,255,.22) !important;
+}}
+
+div.stButton > button:hover,
+div.stButton > button:focus {{
+  background:
+    linear-gradient(135deg,
+      rgba(98,193,229,.28) 0%,
+      rgba(98,193,229,.10) 40%,
+      rgba(98,193,229,.18) 100%
+    ) !important;
+  border:1px solid rgba(98,193,229,.55) !important;
+  color:#fff !important;
+}}
+
+.btnrow div.stButton > button {{ width:100% !important; }}
+
+.tab-active div.stButton > button {{
+  background:
+    linear-gradient(135deg,
+      rgba(98,193,229,.35) 0%,
+      rgba(98,193,229,.12) 45%,
+      rgba(98,193,229,.24) 100%
+    ) !important;
+  border:1px solid rgba(98,193,229,.60) !important;
+  color:{ACCENT} !important;
+  font-weight:950 !important;
+}}
+.tab-inactive div.stButton > button {{
+  background:
+    linear-gradient(135deg,
+      rgba(255,255,255,.10) 0%,
+      rgba(255,255,255,.04) 50%,
+      rgba(255,255,255,.08) 100%
+    ) !important;
+  border:1px solid rgba(255,255,255,.16) !important;
+  color:rgba(233,238,247,.65) !important;
+}}
+
+.stat-chip {{
+  display:inline-flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:8px 14px;
+  min-height:42px;
+  background:
+    linear-gradient(135deg,
+      rgba(255,255,255,.16) 0%,
+      rgba(255,255,255,.05) 40%,
+      rgba(255,255,255,.09) 100%
+    );
+  backdrop-filter:blur(18px) saturate(1.6);
+  -webkit-backdrop-filter:blur(18px) saturate(1.6);
+  border:1px solid rgba(255,255,255,.20);
+  border-radius:14px;
+  line-height:1.25;
+  cursor:default;
+}}
+.stat-chip-label {{
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.9px;
+  text-transform:uppercase;
+  color:rgba(233,238,247,.45);
+}}
+.stat-chip-value {{
+  font-size:13px;
+  font-weight:800;
+  color:#e9eef7;
+  margin-top:1px;
+}}
+
+.next-draw {{
+  display:inline-flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:8px 14px;
+  min-height:42px;
+  border-radius:14px;
+  border:1px solid rgba(98,193,229,.28);
+  background:rgba(98,193,229,.08);
+}}
+.next-draw .lbl {{
+  font-size:9px;
+  font-weight:950;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:rgba(233,238,247,.45);
+}}
+.next-draw .dt {{
+  font-size:18px;
+  font-weight:1000;
+  color:{ACCENT};
+  margin-top:1px;
+  line-height:1.05;
+}}
+.next-draw .cd {{
+  font-size:11px;
+  font-weight:800;
+  color:rgba(233,238,247,.70);
+  margin-top:2px;
+}}
+
+.tx-row {{
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(15,19,31,.72);
+  margin-bottom:8px;
+}}
+.tx-amount {{ font-weight:950; color:{ACCENT}; }}
+.tx-meta   {{ font-size:12px; color:rgba(233,238,247,.55); margin-top:4px; }}
+
+.ticket-row {{
+  padding:14px;
+  border-radius:16px;
+  border:1px solid rgba(98,193,229,.18);
+  background:rgba(98,193,229,.06);
+  margin-bottom:10px;
+}}
+
+.info-card {{
+  background:rgba(15,19,31,.86);
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:18px;
+  padding:26px 22px;
+  height:100%;
+  box-sizing:border-box;
+}}
+.info-card-icon {{ font-size:28px; margin-bottom:10px; }}
+.info-card-title {{ font-size:16px; font-weight:900; color:{ACCENT}; margin-bottom:10px; letter-spacing:.2px; }}
+.info-card-body {{ font-size:13.5px; color:rgba(233,238,247,.82); line-height:1.7; }}
+.step {{
+  display:inline-block; width:20px; height:20px;
+  background:rgba(98,193,229,.20);
+  border:1px solid rgba(98,193,229,.40);
+  border-radius:50%;
+  text-align:center; line-height:20px;
+  font-size:11px; font-weight:900; color:{ACCENT};
+  margin-right:6px; vertical-align:middle;
+}}
+</style>
+""", unsafe_allow_html=True)
 # ─────────────────────────────────────────────────────────────────────────────
 # Config helpers
 # ─────────────────────────────────────────────────────────────────────────────
