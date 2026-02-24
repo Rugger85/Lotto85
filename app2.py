@@ -340,24 +340,111 @@ st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 # Landing (UNCHANGED BEHAVIOR)
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.active_tab == "landing":
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("<span class='pill'>Transparent · On-Chain · Auditable</span>", unsafe_allow_html=True)
-    st.markdown("<div class='big'>LOTTO</div>", unsafe_allow_html=True)
-    st.write(f"Pool: **{pool:,.2f} {sym}**")
-    st.write(f"Round: **{stt}** · Tickets sold: **{sold}** · Price: **{price_str}**")
-    st.write(f"Sales close: **{close_str}** · Draw: **{draw_str}**")
-    st.write("Enter wallet to view tickets (read-only):")
+    left, right = st.columns([1.3, 0.95], gap="large")
 
-    w = st.text_input("Wallet address", placeholder="0x...", label_visibility="collapsed")
-    if st.button("✅ Use Address"):
-        try:
-            st.session_state.wallet = Web3.to_checksum_address(w)
-            st.session_state.active_tab = "dashboard"
-            st.rerun()
-        except Exception:
-            st.error("Invalid address.")
+    with left:
+        st.markdown('<span class="pill">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="heroTitle white">LOTTO<span class="yh">.</span><br/>'
+            f'A verifiable lottery<br/>built on <span class="yh">BSC</span></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="heroSub">Watch the pool live, track ticket ranges on-chain, '
+            'and verify every purchase with public events. Connect your wallet to unlock the dashboard.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="muted" style="margin-top:10px; font-size:12px;">'
+            f'Network: <b style="color:#e9eef7">{net_badge}</b> &nbsp;·&nbsp; '
+            f'Pool: <b style="color:{ACCENT}">{pool:,.2f} {sym}</b> &nbsp;·&nbsp; '
+            f'Block: <b style="color:#e9eef7">{snap["block"]:,}</b></div>',
+            unsafe_allow_html=True,
+        )
+    # price = lotto_c.functions.ticketPrice().call()
+    # st.write(price)
+    with right:
+        st.markdown(
+            f"""
+<div class="card">
+  <h4 style="margin:0 0 14px 0; color:{ACCENT}; font-size:18px;">Get Started</h4>
 
-    st.markdown('</div>', unsafe_allow_html=True)
+  <div class="kpi" style="margin-bottom:10px;">
+    <div class="t">Total Prize Pool</div>
+    <div class="v">{pool:,.2f} {sym}</div>
+    <div class="s">Live contract USDT balance</div>
+  </div>
+
+  <div class="kpi" style="margin-bottom:14px;">
+    <div class="t">Round Status</div>
+    <div class="v" style="font-size:20px;">{stt}</div>
+    <div class="s">
+      Tickets sold: <b>{sold}</b> · Price: <b>{price_str}</b><br/>
+      Sales close: <b>{close_str}</b><br/>
+      Draw: <b>{draw_str}</b>
+    </div>
+  </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
+
+    st.markdown('<div style="height:24px"></div>', unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3, gap="medium")
+    with c1:
+        st.markdown(
+            f"""
+<div class="info-card">
+  <div class="info-card-icon">💡</div>
+  <div class="info-card-title">The Idea</div>
+  <div class="info-card-body">
+    A lottery should be <b>provable</b> — not just "trust us".
+    LOTTO surfaces live on-chain pool data, ticket purchases, and
+    round states so anyone can verify every draw independently.
+  </div>
+</div>""",
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            """
+<div class="info-card">
+  <div class="info-card-icon">⚙️</div>
+  <div class="info-card-title">How It Works</div>
+  <div class="info-card-body">
+    <span class="step">1</span> Connect your wallet<br/>
+    <span class="step">2</span> Approve USDT spend<br/>
+    <span class="step">3</span> Buy tickets &amp; receive a range<br/>
+    <span class="step">4</span> Draw happens on-chain automatically
+  </div>
+</div>""",
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            """
+<div class="info-card">
+  <div class="info-card-icon">🦊</div>
+  <div class="info-card-title">Wallets</div>
+  <div class="info-card-body">
+    Use <b>MetaMask</b> to buy tickets and sign transactions.<br/><br/>
+    Use <b>Manual Address</b> to view the dashboard in read-only
+    mode without connecting a wallet.
+  </div>
+</div>""",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div class="muted" style="text-align:center; padding:18px 0; font-size:11px;">'
+        f'LOTTO · Contract: {fmt_addr(LOTTO_CONTRACT)} · '
+        f'<a href="https://bscscan.com/address/{LOTTO_CONTRACT}" target="_blank">View on BscScan ↗</a></div>',
+        unsafe_allow_html=True,
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dashboard (Neon tickets only after wallet)
