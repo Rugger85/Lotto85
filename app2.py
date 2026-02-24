@@ -4,17 +4,23 @@ import os, json
 from pathlib import Path
 from datetime import datetime, timezone
 
-import psycopg2
 import streamlit as st
 import plotly.graph_objects as go
 from web3 import Web3
 
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Config
+# Streamlit setup
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Config helpers
+# ─────────────────────────────────────────────────────────────────────────────
 def cfg(key: str, default: str = "") -> str:
     try:
         if key in st.secrets:
@@ -24,22 +30,27 @@ def cfg(key: str, default: str = "") -> str:
         pass
     return os.getenv(key, default)
 
+
 CHAIN_ID       = int(cfg("CHAIN_ID", "56"))
 BSC_RPC        = cfg("BSC_RPC", "")
 LOTTO_ADDR     = cfg("LOTTO_CONTRACT", "")
 USDT_ADDR      = cfg("USDT_ADDRESS", "")
 ADMIN_ADDR     = cfg("ADMIN_WALLET", "")
 ABI_PATH       = cfg("LOTTO_ABI_PATH", "lotto_abi.json")
-NEON_DSN       = cfg("NEON_DSN", "")
+
+# Prefer DATABASE_URL; support NEON_DSN for your existing setup
+DATABASE_URL   = cfg("DATABASE_URL", "") or cfg("NEON_DSN", "")
+
 BUY_DAPP_URL   = cfg("BUY_DAPP_URL", "https://rugger85.github.io/Lotto85/wallet_buy.html")
 ACCENT         = "#62c1e5"
+
 
 missing = [k for k, v in {
     "BSC_RPC": BSC_RPC,
     "LOTTO_CONTRACT": LOTTO_ADDR,
     "USDT_ADDRESS": USDT_ADDR,
     "ADMIN_WALLET": ADMIN_ADDR,
-    "NEON_DSN": NEON_DSN,
+    "DATABASE_URL (or NEON_DSN)": DATABASE_URL,
 }.items() if not v]
 
 if missing:
@@ -52,6 +63,38 @@ ADMIN_ADDR = Web3.to_checksum_address(ADMIN_ADDR)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SQLAlchemy / Neon
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_resource
+def get_engine() -> Engine:
+    # Neon uses TLS; your URL already includes sslmode=require usually
+    # pool_pre_ping helps prevent stale connections
+    return create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=3,
+        max_overflow=3,
+    )
+
+engine = get_engine()
+
+
+def q_all(sql: str, params: dict | None = None):
+    params = params or {}
+    with engine.connect() as conn:
+        res = conn.execute(text(sql), params)
+        cols = list(res.keys()) if res.returns_rows else []
+        rows = res.fetchall() if res.returns_rows else []
+        return cols, rows
+
+
+def exec_sql(sql: str, params: dict | None = None):
+    params = params or {}
+    with engine.begin() as conn:
+        conn.execute(text(sql), params)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Web3 + ABI
 # ─────────────────────────────────────────────────────────────────────────────
 w3 = Web3(Web3.HTTPProvider(BSC_RPC, request_kwargs={"timeout": 20}))
@@ -59,12 +102,14 @@ if not w3.is_connected():
     st.error("RPC connection failed. Check BSC_RPC.")
     st.stop()
 
+
 def load_abi(path: str):
     p = Path(path)
     if not p.is_absolute():
         p = Path(__file__).parent / path
     raw = json.loads(p.read_text(encoding="utf-8"))
     return raw["abi"] if isinstance(raw, dict) and "abi" in raw else raw
+
 
 LOTTO_ABI = load_abi(ABI_PATH)
 lotto_c = w3.eth.contract(address=LOTTO_ADDR, abi=LOTTO_ABI)
@@ -79,25 +124,6 @@ usdt_c = w3.eth.contract(address=USDT_ADDR, abi=ERC20_ABI)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Neon helpers
-# ─────────────────────────────────────────────────────────────────────────────
-def db():
-    return psycopg2.connect(NEON_DSN)
-
-def q_all(sql: str, params=()):
-    with db() as conn, conn.cursor() as cur:
-        cur.execute(sql, params)
-        cols = [d[0] for d in cur.description] if cur.description else []
-        rows = cur.fetchall() if cur.description else []
-        return cols, rows
-
-def exec_sql(sql: str, params=()):
-    with db() as conn, conn.cursor() as cur:
-        cur.execute(sql, params)
-        conn.commit()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # UI helpers
 # ─────────────────────────────────────────────────────────────────────────────
 def safe(fn, default=None):
@@ -106,23 +132,29 @@ def safe(fn, default=None):
     except Exception:
         return default
 
+
 def fmt_addr(a: str) -> str:
     a = str(a)
     return a[:6] + "…" + a[-4:] if a.startswith("0x") and len(a) > 10 else a
 
+
 def tok(raw: int, dec: int) -> float:
     return float(raw) / (10 ** dec)
 
+
 def bnb(raw: int) -> float:
     return float(raw) / 1e18
+
 
 def ts_short(t: int | None) -> str:
     if not t or int(t) <= 0:
         return "N/A"
     return datetime.fromtimestamp(int(t), tz=timezone.utc).strftime("%b %d, %Y")
 
+
 def state_lbl(s: int) -> str:
     return {0: "🟢 Open", 1: "🔒 Sales Closed", 2: "🎉 Drawn"}.get(int(s), f"State {s}")
+
 
 def donut(split: dict[str, float]):
     fig = go.Figure(go.Pie(labels=list(split.keys()), values=list(split.values()), hole=0.68, sort=False, textinfo="none"))
@@ -149,6 +181,7 @@ def get_snap():
         c_usdt=tok(c_raw, dec), a_usdt=tok(a_raw, dec),
         c_bnb=bnb(c_bnb), a_bnb=bnb(a_bnb),
     )
+
 
 @st.cache_data(ttl=15)
 def get_round_snap():
@@ -178,19 +211,24 @@ def db_get_tickets(buyer: str):
     sql = """
     SELECT round_id, qty, first_ticket_id, last_ticket_id, tx_hash, block_number, created_at
     FROM tickets_bought
-    WHERE chain_id = %s AND contract_addr = %s AND buyer = %s
+    WHERE chain_id = :chain_id AND contract_addr = :contract_addr AND buyer = :buyer
     ORDER BY block_number DESC, created_at DESC
     LIMIT 200;
     """
-    _, rows = q_all(sql, (CHAIN_ID, LOTTO_ADDR.lower(), buyer))
+    _, rows = q_all(sql, {
+        "chain_id": CHAIN_ID,
+        "contract_addr": LOTTO_ADDR.lower(),
+        "buyer": buyer,
+    })
     return rows
+
 
 def db_insert_from_tx(tx_hash: str):
     """
     One-time backfill: fetch receipt, decode TicketsBought log, insert into Neon.
     Works without getLogs scanning.
     """
-    tx_hash = tx_hash.strip()
+    tx_hash = (tx_hash or "").strip()
     if not tx_hash.startswith("0x") or len(tx_hash) != 66:
         raise ValueError("Invalid tx hash")
 
@@ -206,25 +244,27 @@ def db_insert_from_tx(tx_hash: str):
             ev = lotto_c.events.TicketsBought().process_log(lg)
             args = ev["args"]
             buyer = Web3.to_checksum_address(args["buyer"]).lower()
+
             exec_sql(
                 """
                 INSERT INTO tickets_bought
                 (chain_id, contract_addr, buyer, round_id, qty, first_ticket_id, last_ticket_id, tx_hash, block_number, log_index)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES
+                (:chain_id, :contract_addr, :buyer, :round_id, :qty, :first_ticket_id, :last_ticket_id, :tx_hash, :block_number, :log_index)
                 ON CONFLICT DO NOTHING;
                 """,
-                (
-                    CHAIN_ID,
-                    LOTTO_ADDR.lower(),
-                    buyer,
-                    int(args["roundId"]),
-                    int(args["qty"]),
-                    int(args["firstTicketId"]),
-                    int(args["lastTicketId"]),
-                    tx_hash.lower(),
-                    int(receipt["blockNumber"]),
-                    int(lg["logIndex"]),
-                )
+                {
+                    "chain_id": CHAIN_ID,
+                    "contract_addr": LOTTO_ADDR.lower(),
+                    "buyer": buyer,
+                    "round_id": int(args["roundId"]),
+                    "qty": int(args["qty"]),
+                    "first_ticket_id": int(args["firstTicketId"]),
+                    "last_ticket_id": int(args["lastTicketId"]),
+                    "tx_hash": tx_hash.lower(),
+                    "block_number": int(receipt["blockNumber"]),
+                    "log_index": int(lg["logIndex"]),
+                }
             )
             inserted += 1
         except Exception:
@@ -269,15 +309,26 @@ pool = snap["c_usdt"]
 net_badge = "BSC Mainnet" if CHAIN_ID == 56 else f"Chain {CHAIN_ID}"
 abi_ok = "✅ ABI Loaded"
 
-PRIZE_SPLIT = {"1st (40%)":40,"2nd (25%)":25,"3rd (15%)":15,"4th (10%)":10,"5th (5%)":5,"6th (5%)":5,"Admin (20%)":20}
+PRIZE_SPLIT = {
+    "1st (40%)": 40,
+    "2nd (25%)": 25,
+    "3rd (15%)": 15,
+    "4th (10%)": 10,
+    "5th (5%)":  5,
+    "6th (5%)":  5,
+    "Admin (20%)": 20,
+}
 
 # Top bar
-l, r = st.columns([2,3], gap="small")
+l, r = st.columns([2, 3], gap="small")
 with l:
     st.markdown("### 🎰 LOTTO")
-    st.markdown(f'<span class="pill">{net_badge}</span> &nbsp; Block: <b>{snap["block"]:,}</b> · {abi_ok}', unsafe_allow_html=True)
+    st.markdown(
+        f'<span class="pill">{net_badge}</span> &nbsp; Block: <b>{snap["block"]:,}</b> · {abi_ok}',
+        unsafe_allow_html=True
+    )
 with r:
-    c1, c2 = st.columns([1.3,1.0], gap="small")
+    c1, c2 = st.columns([1.3, 1.0], gap="small")
     with c1:
         st.link_button("🦊 Open Buy Page", BUY_DAPP_URL)
     with c2:
@@ -291,22 +342,28 @@ with r:
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Tabs
-t1, t2, _ = st.columns([1,1,6])
+t1, t2, _ = st.columns([1, 1, 6])
 with t1:
     if st.button("🏠 Home"):
-        st.session_state.active_tab = "landing"; st.rerun()
+        st.session_state.active_tab = "landing"
+        st.rerun()
 with t2:
     if st.button("📊 Dashboard"):
-        st.session_state.active_tab = "dashboard"; st.rerun()
+        st.session_state.active_tab = "dashboard"
+        st.rerun()
 
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 if st.session_state.active_tab == "landing":
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown(f"<span class='pill'>Transparent · On-Chain · Auditable</span>", unsafe_allow_html=True)
-    st.markdown(f"<div class='big'>LOTTO</div>", unsafe_allow_html=True)
+    st.markdown("<span class='pill'>Transparent · On-Chain · Auditable</span>", unsafe_allow_html=True)
+    st.markdown("<div class='big'>LOTTO</div>", unsafe_allow_html=True)
     st.write(f"Pool: **{pool:,.2f} {sym}**")
-    st.write(f"Round: **{state_lbl(rsnap.get('state',0))}** · Tickets sold: **{rsnap.get('sold','—')}** · Price: **{rsnap.get('price_str','—')}**")
+    st.write(
+        f"Round: **{state_lbl(rsnap.get('state', 0))}** · "
+        f"Tickets sold: **{rsnap.get('sold', '—')}** · "
+        f"Price: **{rsnap.get('price_str', '—')}**"
+    )
     st.write("Enter wallet to view tickets (read-only):")
     w = st.text_input("Wallet address", placeholder="0x...", label_visibility="collapsed")
     if st.button("✅ Use Address"):
@@ -316,7 +373,7 @@ if st.session_state.active_tab == "landing":
             st.rerun()
         except Exception:
             st.error("Invalid address.")
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 else:
     wallet = st.session_state.wallet
@@ -327,8 +384,12 @@ else:
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.write(f"Wallet: **{fmt_addr(wallet)}**")
-    st.write(f"Pool: **{pool:,.2f} {sym}** · Ticket Price: **{rsnap.get('price_str','—')}** · Tickets Sold: **{rsnap.get('sold','—')}**")
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.write(
+        f"Pool: **{pool:,.2f} {sym}** · "
+        f"Ticket Price: **{rsnap.get('price_str', '—')}** · "
+        f"Tickets Sold: **{rsnap.get('sold', '—')}**"
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
@@ -366,7 +427,7 @@ else:
 
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-    c1, c2 = st.columns([1,1])
+    c1, c2 = st.columns([1, 1])
     with c1:
         st.subheader("🏆 Prize Structure")
         st.plotly_chart(donut(PRIZE_SPLIT), use_container_width=True, config={"displayModeBar": False})
