@@ -352,43 +352,43 @@ if st.session_state.active_tab == "landing":
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-    left, right = st.columns([1.3, 0.95], gap="large")
-    with left:
-        st.markdown('<span class="pill">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="white" style="font-size:46px; font-weight:1000; line-height:1.03;">'
-            f'LOTTO<span class="yh">.</span><br/>A verifiable lottery<br/>built on <span class="yh">BSC</span></div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="muted" style="font-size:14px; max-width:60ch;">'
-            'Watch the pool live, track ticket purchases on-chain, and verify every draw independently.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with right:
-        st.markdown(
-            f"""
-        <div class="card">
-          <h4 style="margin:0 0 14px 0; color:{ACCENT}; font-size:18px;">Get Started</h4>
-        
-          <div class="kpi" style="margin-bottom:10px;">
-            <div class="t">Total Prize Pool</div>
-            <div class="v">{pool:,.2f} {sym}</div>
-            <div class="s">Live contract USDT balance</div>
-          </div>
-        
-          <div class="kpi">
-            <div class="t">Round Status</div>
-            <div class="v" style="font-size:20px;">{stt}</div>
-            <div class="s">
-              Tickets sold: <b>{sold}</b> · Price: <b>{price_str}</b><br/>
-              Sales close: <b>{close_str}</b><br/>
-              Draw: <b>{draw_str}</b>
+        left, right = st.columns([1.3, 0.95], gap="large")
+        with left:
+            st.markdown('<span class="pill">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="white" style="font-size:46px; font-weight:1000; line-height:1.03;">'
+                f'LOTTO<span class="yh">.</span><br/>A verifiable lottery<br/>built on <span class="yh">BSC</span></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div class="muted" style="font-size:14px; max-width:60ch;">'
+                'Watch the pool live, track ticket purchases on-chain, and verify every draw independently.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        with right:
+            st.markdown(
+                f"""
+            <div class="card">
+              <h4 style="margin:0 0 14px 0; color:{ACCENT}; font-size:18px;">Get Started</h4>
+            
+              <div class="kpi" style="margin-bottom:10px;">
+                <div class="t">Total Prize Pool</div>
+                <div class="v">{pool:,.2f} {sym}</div>
+                <div class="s">Live contract USDT balance</div>
+              </div>
+            
+              <div class="kpi">
+                <div class="t">Round Status</div>
+                <div class="v" style="font-size:20px;">{stt}</div>
+                <div class="s">
+                  Tickets sold: <b>{sold}</b> · Price: <b>{price_str}</b><br/>
+                  Sales close: <b>{close_str}</b><br/>
+                  Draw: <b>{draw_str}</b>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        """,
+            """,
                     unsafe_allow_html=True,
                 )
 
