@@ -707,7 +707,58 @@ else:
             use_container_width=True,
             hide_index=True,
         )
+  PRIZE_SPLIT = {
+    "1st (40%)":  40,
+    "2nd (25%)":  25,
+    "3rd (15%)":  15,
+    "4th (10%)":  10,
+    "5th (5%)":    5,
+    "6th (5%)":    5,
+    "Admin (20%)": 20,
+}
+ c1, c2, c3 = st.columns(3, gap="large")
 
+    with c1:
+        st.markdown('#### <span class="yh">🏆 Prize Structure</span>', unsafe_allow_html=True)
+        st.plotly_chart(donut(PRIZE_SPLIT), use_container_width=True, config={"displayModeBar": False})
+        for lbl, pct in PRIZE_SPLIT.items():
+            st.write(f"**{lbl}** — {pool * pct / 100:,.2f} {sym}")
+
+    with c2:
+        st.markdown('#### <span class="yh">🧾 Recent Transfers</span>', unsafe_allow_html=True)
+        logs = snap.get("logs", []) or []
+    
+        if not logs:
+            st.caption("No inbound USDT transfers found in the last 5,000 blocks.")
+        else:
+            for lg in logs:
+                amt = float(lg.get("amount", 0.0))
+                sym2 = lg.get("symbol", sym)
+                blk2 = int(lg.get("block", 0))
+                frm2 = lg.get("from", "0x0")
+                tx2  = lg.get("tx", "")
+    
+                # show tiny transfers properly
+                pretty = f"{amt:,.6f}" if amt >= 0.01 else f"{amt:.12f}".rstrip("0").rstrip(".")
+    
+                st.markdown(
+                    f'<div class="tx-row">'
+                    f'<div class="tx-amount">+{pretty} {sym2}</div>'
+                    f'<div class="tx-meta">'
+                    f'Block {blk2:,} · from {fmt_addr(frm2)} · '
+                    f'<a href="https://bscscan.com/tx/{tx2}" target="_blank">{fmt_addr(tx2)} ↗</a>'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+    with c3:
+        st.markdown('#### <span class="yh">📈 Platform Stats</span>', unsafe_allow_html=True)
+        st.metric("USDT (Contract)", f"{snap['c_usdt']:,.2f} {sym}")
+        st.metric("USDT (Admin)",    f"{snap['a_usdt']:,.2f} {sym}")
+        st.metric("BNB (Contract)",  f"{snap['c_bnb']:.6f}")
+        st.metric("BNB (Admin)",     f"{snap['a_bnb']:.6f}")
+        st.caption(f"RPC: {ACTIVE_RPC}")
+        st.caption(f"Admin: {fmt_addr(ADMIN)}")
     # with st.expander("Backfill a past purchase by Tx Hash (no scanning)", expanded=False):
     #     tx = st.text_input("Tx hash", placeholder="0x...")
     #     if st.button("Backfill into Neon"):
