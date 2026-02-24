@@ -439,12 +439,7 @@ if st.session_state.active_tab == "landing":
 
     st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
 
-    st.markdown(
-        f'<div class="muted" style="text-align:center; padding:18px 0; font-size:11px;">'
-        f'LOTTO · Contract: {fmt_addr(LOTTO_CONTRACT)} · '
-        f'<a href="https://bscscan.com/address/{LOTTO_CONTRACT}" target="_blank">View on BscScan ↗</a></div>',
-        unsafe_allow_html=True,
-    )
+    
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dashboard (Neon tickets only after wallet)
