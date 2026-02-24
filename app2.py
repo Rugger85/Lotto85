@@ -786,7 +786,6 @@ def render_tab_strip():
   <div class="next-draw">
     <div class="lbl">Next Draw</div>
     <div class="dt">{draw_short}</div>
-    <div class="cd">{draw_cd}</div>
   </div>
 </div>
 """,
