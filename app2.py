@@ -340,18 +340,7 @@ st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 # Landing (UNCHANGED BEHAVIOR)
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.active_tab == "landing":
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('#### <span class="yh">Connect Read-Only Wallet</span>', unsafe_allow_html=True)
-        st.markdown('<div class="muted">Paste an address to unlock the dashboard.</div>', unsafe_allow_html=True)
-        st.text_input("Wallet address", key="manual_input", placeholder="0x1234…abcd", label_visibility="collapsed")
-        b1, b2, _ = st.columns([1, 1, 4], gap="small")
-        with b1:
-            st.button("✅ Use This Address", on_click=submit_manual, key="manual_submit")
-        with b2:
-            st.button("Cancel", on_click=lambda: st.session_state.update(show_manual=False, manual_input=""), key="manual_cancel")
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
-
+        
         left, right = st.columns([1.3, 0.95], gap="large")
         with left:
             st.markdown('<span class="pill">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
