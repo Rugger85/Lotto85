@@ -552,7 +552,7 @@ else:
         st.info("Paste wallet on Home to view your tickets.")
         st.stop()
 
-    st.markdown('<div class="card">', unsafe_allow_html=True)
+    # st.markdown('<div class="card">', unsafe_allow_html=True)
     st.write(f"Wallet: **{fmt_addr(wallet)}**")
     st.write(f"Pool: **{pool:,.2f} {sym}** · Ticket Price: **{price_str}** · Tickets Sold: **{sold}**")
     st.markdown('</div>', unsafe_allow_html=True)
