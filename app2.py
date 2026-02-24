@@ -350,27 +350,43 @@ def get_round_snap():
     except Exception:
         return {}
 
+def _topic0_from_event_abi(event_abi: dict) -> str:
+    # Builds: EventName(type1,type2,...)
+    name = event_abi["name"]
+    types = ",".join([i["type"] for i in event_abi.get("inputs", [])])
+    sig = f"{name}({types})"
+    return Web3.keccak(text=sig).hex()
+
 @st.cache_data(ttl=60)
-def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
+def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 600_000):
     if not lotto_c:
         return []
 
     wallet = Web3.to_checksum_address(wallet)
-
     latest = int(w3.eth.block_number)
     frm = max(0, latest - int(lookback_blocks))
 
-    # event TicketsBought(address buyer,uint256 roundId,uint256 qty,uint256 firstTicketId,uint256 lastTicketId)
-    # If your event signature differs, tell me your exact event line from Solidity.
-    topic0 = Web3.keccak(text="TicketsBought(address,uint256,uint256,uint256,uint256)").hex()
-    buyer_topic = "0x" + "0" * 24 + wallet.lower().replace("0x", "")
+    # Find event ABI by name (must match your contract)
+    # If your event is not named exactly "TicketsBought", change it here.
+    event_name = "TicketsBought"
+    ev_abi = None
+    for item in LOTTO_ABI:
+        if item.get("type") == "event" and item.get("name") == event_name:
+            ev_abi = item
+            break
+    if not ev_abi:
+        return []
 
+    topic0 = _topic0_from_event_abi(ev_abi)
+
+    # IMPORTANT: filter ONLY by topic0 (no buyer topic)
+    # This works even if buyer is NOT indexed.
     try:
         logs = w3.eth.get_logs({
             "fromBlock": frm,
             "toBlock": "latest",
             "address": LOTTO_CONTRACT,
-            "topics": [topic0, buyer_topic],
+            "topics": [topic0],
         })
     except Exception:
         return []
@@ -380,21 +396,24 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
         try:
             decoded = lotto_c.events.TicketsBought().process_log(lg)
             args = decoded["args"]
+
+            buyer = Web3.to_checksum_address(args.get("buyer"))
+            if buyer != wallet:
+                continue
+
             out.append({
-                "round": int(args["roundId"]),
-                "qty": int(args["qty"]),
-                "first": int(args["firstTicketId"]),
-                "last": int(args["lastTicketId"]),
+                "round": int(args.get("roundId", 0)),
+                "qty": int(args.get("qty", 0)),
+                "first": int(args.get("firstTicketId", 0)),
+                "last": int(args.get("lastTicketId", 0)),
                 "tx": lg["transactionHash"].hex(),
                 "block": int(lg["blockNumber"]),
             })
         except Exception:
-            # If ABI/event mismatches, decoding will fail
             continue
 
     out.sort(key=lambda x: x["block"], reverse=True)
     return out
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state
 # ─────────────────────────────────────────────────────────────────────────────
@@ -941,7 +960,11 @@ def render_dashboard():
     render_toasts()
 
     wallet = st.session_state.wallet
-
+    with st.expander("Debug: Contract Events", expanded=False):
+        names = sorted({x.get("name") for x in LOTTO_ABI if x.get("type") == "event"})
+        st.write("Events in ABI:", names)
+        st.write("Contract:", LOTTO_CONTRACT)
+        st.write("Wallet:", st.session_state.wallet)
     # Show connect card if no wallet — but DO NOT return (so stats still show)
     if not wallet:
         st.markdown('<div class="card">', unsafe_allow_html=True)
