@@ -682,7 +682,7 @@ else:
         st.warning("DATABASE_URL / NEON_DSN not set. Add it in Streamlit secrets to show tickets from Neon.")
         st.stop()
 
-    st.subheader("🎟️ My Tickets (from Neon)")
+    st.subheader("🎟️ My Tickets")
 
     rows = []
     try:
@@ -692,8 +692,8 @@ else:
         st.stop()
 
     if not rows:
-        st.warning("No tickets found in Neon yet.")
-        st.caption("If you bought already: use Backfill below with your tx hash to insert that purchase without scanning logs.")
+        st.warning("No tickets found")
+        # st.caption("If you bought already: use Backfill below with your tx hash to insert that purchase without scanning logs.")
     else:
         st.dataframe(
             [{
@@ -708,13 +708,13 @@ else:
             hide_index=True,
         )
 
-    with st.expander("Backfill a past purchase by Tx Hash (no scanning)", expanded=False):
-        tx = st.text_input("Tx hash", placeholder="0x...")
-        if st.button("Backfill into Neon"):
-            try:
-                n = db_insert_from_tx(engine, tx)
-                st.success(f"Inserted {n} TicketsBought event(s) from receipt.")
-                st.cache_data.clear()
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
+    # with st.expander("Backfill a past purchase by Tx Hash (no scanning)", expanded=False):
+    #     tx = st.text_input("Tx hash", placeholder="0x...")
+    #     if st.button("Backfill into Neon"):
+    #         try:
+    #             n = db_insert_from_tx(engine, tx)
+    #             st.success(f"Inserted {n} TicketsBought event(s) from receipt.")
+    #             st.cache_data.clear()
+    #             st.rerun()
+    #         except Exception as e:
+    #             st.error(str(e))
