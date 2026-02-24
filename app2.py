@@ -20,6 +20,7 @@ st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
 # ─────────────────────────────────────────────────────────────────────────────
 # Global CSS
 # ─────────────────────────────────────────────────────────────────────────────
+ACCENT = "#62c1e5"
 st.markdown(f"""
 <style>
 #MainMenu, header, footer,
