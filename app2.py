@@ -359,14 +359,12 @@ if st.session_state.active_tab == "landing":
             st.markdown(
                 f"""
             <div class="card">
-              <h4 style="margin:0 0 14px 0; color:{ACCENT}; font-size:18px;">Get Started</h4>
-            
+              <h4 style="margin:0 0 18px 0; color:{ACCENT}; font-size:18px;">Info</h4>
               <div class="kpi" style="margin-bottom:10px;">
                 <div class="t">Total Prize Pool</div>
                 <div class="v">{pool:,.2f} {sym}</div>
                 <div class="s">Live contract USDT balance</div>
               </div>
-            
               <div class="kpi">
                 <div class="t">Round Status</div>
                 <div class="v" style="font-size:20px;">{stt}</div>
