@@ -707,15 +707,15 @@ else:
             use_container_width=True,
             hide_index=True,
         )
-  PRIZE_SPLIT = {
-    "1st (40%)":  40,
-    "2nd (25%)":  25,
-    "3rd (15%)":  15,
-    "4th (10%)":  10,
-    "5th (5%)":    5,
-    "6th (5%)":    5,
-    "Admin (20%)": 20,
-  }
+PRIZE_SPLIT = {
+"1st (40%)":  40,
+"2nd (25%)":  25,
+"3rd (15%)":  15,
+"4th (10%)":  10,
+"5th (5%)":    5,
+"6th (5%)":    5,
+"Admin (20%)": 20,
+}
  c1, c2, c3 = st.columns(3, gap="large")
 
     with c1:
