@@ -351,44 +351,46 @@ def get_round_snap():
         return {}
 
 @st.cache_data(ttl=60)
-def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 120_000):
+def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
     if not lotto_c:
         return []
 
     wallet = Web3.to_checksum_address(wallet)
+
     latest = int(w3.eth.block_number)
     frm = max(0, latest - int(lookback_blocks))
 
-    out = []
-    ev = lotto_c.events.TicketsBought
+    # event TicketsBought(address buyer,uint256 roundId,uint256 qty,uint256 firstTicketId,uint256 lastTicketId)
+    # If your event signature differs, tell me your exact event line from Solidity.
+    topic0 = Web3.keccak(text="TicketsBought(address,uint256,uint256,uint256,uint256)").hex()
+    buyer_topic = "0x" + "0" * 24 + wallet.lower().replace("0x", "")
 
     try:
-        flt = ev.create_filter(
-            fromBlock=frm,
-            toBlock="latest",
-            argument_filters={"buyer": wallet},
-        )
-        entries = flt.get_all_entries()
-    except Exception:
-        # RPC fallback: fetch all, filter locally
-        try:
-            flt = ev.create_filter(fromBlock=frm, toBlock="latest")
-            entries = flt.get_all_entries()
-            entries = [e for e in entries if Web3.to_checksum_address(e["args"]["buyer"]) == wallet]
-        except Exception:
-            return []
-
-    for e in entries:
-        args = e["args"]
-        out.append({
-            "event": "TicketsBought",
-            "round": int(args["roundId"]),
-            "qty": int(args["qty"]),
-            "first": int(args["firstTicketId"]),
-            "last": int(args["lastTicketId"]),
-            "tx": e["transactionHash"].hex(),
-            "block": int(e["blockNumber"]),
+        logs = w3.eth.get_logs({
+            "fromBlock": frm,
+            "toBlock": "latest",
+            "address": LOTTO_CONTRACT,
+            "topics": [topic0, buyer_topic],
         })
+    except Exception:
+        return []
+
+    out = []
+    for lg in logs:
+        try:
+            decoded = lotto_c.events.TicketsBought().process_log(lg)
+            args = decoded["args"]
+            out.append({
+                "round": int(args["roundId"]),
+                "qty": int(args["qty"]),
+                "first": int(args["firstTicketId"]),
+                "last": int(args["lastTicketId"]),
+                "tx": lg["transactionHash"].hex(),
+                "block": int(lg["blockNumber"]),
+            })
+        except Exception:
+            # If ABI/event mismatches, decoding will fail
+            continue
 
     out.sort(key=lambda x: x["block"], reverse=True)
     return out
@@ -1009,124 +1011,88 @@ def render_dashboard():
         st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
         # My Tickets panel only if wallet exists and they clicked it
+        # My Tickets panel
         if st.session_state.ui_mode == "my_tickets":
             st.markdown('<div class="card">', unsafe_allow_html=True)
-
+        
             h1, h2 = st.columns([10, 1])
             with h1:
                 st.markdown('### <span class="yh">🎟️ My Tickets</span>', unsafe_allow_html=True)
             with h2:
                 st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"), key="my_close")
-
-            if not lotto_c:
-                st.warning("ABI not loaded — cannot fetch ticket events.")
-                st.markdown(f"[🔍 View on BscScan](https://bscscan.com/address/{LOTTO_CONTRACT}#events)")
-                st.markdown('</div>', unsafe_allow_html=True)
-            return
-
-            lookback = st.slider("Lookback blocks", 10_000, 300_000, 120_000, 10_000, key="my_lookback")
-
-            with st.spinner("Fetching ticket purchases…"):
-                purchases = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
-
-            if not purchases:
-                st.info("No tickets found for this wallet in selected range.")
-                st.markdown('</div>', unsafe_allow_html=True)
-            return
-
-    # ---- Expand tickets ----
-            rows = []
-            total_tickets = 0
-
-            for p in purchases:
-                qty = int(p["qty"])
-                start = int(p["first"])
-                end = int(p["last"])
-                tx = p["tx"]
-                blk = p.get("block", 0)
-
-            total_tickets += qty
-
-            for tid in range(start, end + 1):
-                rows.append({
-                    "wallet": wallet,
-                    "ticket": tid,
-                    "block": blk,
-                    "tx": tx
-                })
-
-    # ---- Ticket Count Strip ----
-            st.markdown(
-                f'''
-                <div style="
-                    background: linear-gradient(90deg, #1e293b, #0f172a);
-                    padding:16px;
-                    border-radius:12px;
-                    margin-bottom:18px;
-                    border:1px solid rgba(255,255,255,0.05);
-                ">
-                    <div style="font-size:13px; opacity:.7;">Linked Wallet</div>
-                    <div style="font-size:18px; font-weight:800; color:{ACCENT};">
-                        {fmt_addr(wallet)}
-                    </div>
-                    <div style="margin-top:8px; font-size:16px;">
-                        🎟 Total Tickets: <b>{total_tickets}</b>
-                    </div>
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
-
-    # ---- Table Header ----
-            st.markdown(
-                '''
-                <div style="
-                    display:grid;
-                    grid-template-columns: 1fr 2fr;
-                    padding:10px 14px;
-                    font-weight:800;
-                    border-bottom:1px solid rgba(255,255,255,0.08);
-                    opacity:.8;
-                ">
-                    <div>Wallet</div>
-                    <div>Ticket • Block • Tx</div>
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
-
-            # ---- Ticket Rows ----
-            for r in rows:
-                st.markdown(
-                    f'''
-                    <div style="
-                        display:grid;
-                        grid-template-columns: 1fr 2fr;
-                        padding:12px 14px;
-                        border-bottom:1px solid rgba(255,255,255,0.05);
-                        align-items:center;
-                    ">
-                        <div style="font-weight:700;">
-                            {fmt_addr(r["wallet"])}
-                        </div>
         
-                        <div>
-                            🎟 <b>{r["ticket"]}</b>
-                            <span style="opacity:.6; font-size:12px;">
-                                · Block {r["block"]:,}
-                            </span>
-                            <br>
-                            <a href="https://bscscan.com/tx/{r["tx"]}" target="_blank"
-                               style="font-size:12px; opacity:.7;">
-                               {fmt_addr(r["tx"])} ↗
-                            </a>
-                        </div>
-                    </div>
-                    ''',
-                    unsafe_allow_html=True
-                )
+            if not wallet:
+                st.info("Paste your wallet address above to view ticket purchases.")
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                if not lotto_c:
+                    st.warning("ABI not loaded — cannot decode TicketsBought logs.")
+                    st.markdown(f"[🔍 View events on BscScan](https://bscscan.com/address/{LOTTO_CONTRACT}#events)")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                else:
+                    lookback = st.slider(
+                        "Lookback blocks",
+                        10_000, 600_000, 200_000, 10_000,
+                        key="my_lookback"
+                    )
         
-            st.markdown('</div>', unsafe_allow_html=True)
+                    with st.spinner("Fetching ticket purchases…"):
+                        purchases = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
+        
+                    if not purchases:
+                        st.info("No TicketsBought events found for this wallet in the selected lookback range.")
+                        st.caption("Tip: increase lookback blocks or confirm you bought tickets from this same address.")
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    else:
+                        # Summary table (one row per purchase)
+                        st.markdown("#### Purchases")
+                        st.dataframe(
+                            [
+                                {
+                                    "Round": p["round"],
+                                    "Qty": p["qty"],
+                                    "Ticket Range": f'{p["first"]} → {p["last"]}',
+                                    "Block": p["block"],
+                                    "Tx": p["tx"],
+                                    "Tx Link": f"https://bscscan.com/tx/{p['tx']}",
+                                }
+                                for p in purchases
+                            ],
+                            use_container_width=True,
+                            hide_index=True
+                        )
+        
+                        # Expanded table (one row per ticket)
+                        expand = st.checkbox("Expand to individual ticket IDs (can be large)", value=False, key="my_expand")
+                        if expand:
+                            rows = []
+                            total_tickets = 0
+        
+                            for p in purchases:
+                                qty = int(p["qty"])
+                                start = int(p["first"])
+                                end = int(p["last"])
+                                tx = p["tx"]
+                                blk = int(p["block"])
+        
+                                total_tickets += qty
+                                for tid in range(start, end + 1):
+                                    rows.append({
+                                        "TicketId": tid,
+                                        "Round": p["round"],
+                                        "Block": blk,
+                                        "Tx": tx,
+                                        "Tx Link": f"https://bscscan.com/tx/{tx}",
+                                    })
+        
+                            st.markdown(
+                                f'<div class="muted" style="margin-top:10px;">Total tickets: <b style="color:{ACCENT}">{total_tickets}</b></div>',
+                                unsafe_allow_html=True
+                            )
+                            st.dataframe(rows, use_container_width=True, hide_index=True)
+        
+                        st.markdown('</div>', unsafe_allow_html=True)
+        
             st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
     # ✅ Analytics row ALWAYS (wallet or not)
     c1, c2, c3 = st.columns(3, gap="large")
