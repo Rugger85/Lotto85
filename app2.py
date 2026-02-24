@@ -207,23 +207,21 @@ def get_round_snap():
 # Tickets: topic0-only logs, decode, filter buyer in Python
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60)
-def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 600_000):
+def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 2_000_000):
     if not lotto_c or not LOTTO_ABI:
-        return []
+        return [], {"err": "no_abi_or_contract"}
 
     wallet = Web3.to_checksum_address(wallet)
     latest = int(w3.eth.block_number)
     frm = max(0, latest - int(lookback_blocks))
 
-    # Your event name must match ABI. If different, rename here.
     event_name = "TicketsBought"
-
     ev_abi = next(
         (x for x in LOTTO_ABI if isinstance(x, dict) and x.get("type") == "event" and x.get("name") == event_name),
         None
     )
     if not ev_abi:
-        return []
+        return [], {"err": "event_not_in_abi"}
 
     topic0 = _topic0_from_event_abi(ev_abi)
 
@@ -231,33 +229,80 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 600_000):
         logs = w3.eth.get_logs({
             "fromBlock": frm,
             "toBlock": "latest",
-            "address": LOTTO_ADDR,
+            "address": LOTTO_ADDR,   # make sure this is the same used to buy
             "topics": [topic0],
         })
-    except Exception:
-        return []
+    except Exception as e:
+        return [], {"err": "get_logs_failed", "msg": str(e)}
 
     out = []
+    decode_errors = 0
+    sample_err = None
+    decoded_any = 0
+
     for lg in logs:
         try:
             decoded = lotto_c.events.TicketsBought().process_log(lg)
+            decoded_any += 1
             args = decoded["args"]
-            buyer = Web3.to_checksum_address(args.get("buyer"))
-            if buyer != wallet:
+
+            # ✅ Find buyer address without assuming the name is "buyer"
+            buyer_addr = None
+            for k, v in dict(args).items():
+                if isinstance(v, str) and v.startswith("0x") and len(v) == 42:
+                    # choose the first address-ish field
+                    buyer_addr = v
+                    break
+
+            if not buyer_addr:
                 continue
+
+            if Web3.to_checksum_address(buyer_addr) != wallet:
+                continue
+
+            # ✅ Extract numbers by position fallback if names differ
+            # We'll try common keys first, else use ev_abi input order
+            def get_int(name_candidates, idx_fallback):
+                for nm in name_candidates:
+                    if nm in args:
+                        return int(args[nm])
+                # fallback: positional by ABI order
+                try:
+                    key = ev_abi["inputs"][idx_fallback]["name"]
+                    return int(args[key])
+                except Exception:
+                    return 0
+
+            round_id = get_int(["roundId", "round", "rid"], 1)
+            qty      = get_int(["qty", "quantity", "count"], 2)
+            first_id = get_int(["firstTicketId", "first", "startId", "fromId"], 3)
+            last_id  = get_int(["lastTicketId", "last", "endId", "toId"], 4)
+
             out.append({
-                "round": int(args.get("roundId", 0)),
-                "qty": int(args.get("qty", 0)),
-                "first": int(args.get("firstTicketId", 0)),
-                "last": int(args.get("lastTicketId", 0)),
+                "round": round_id,
+                "qty": qty,
+                "first": first_id,
+                "last": last_id,
                 "tx": lg["transactionHash"].hex(),
                 "block": int(lg["blockNumber"]),
             })
-        except Exception:
-            continue
+
+        except Exception as e:
+            decode_errors += 1
+            if sample_err is None:
+                sample_err = str(e)
 
     out.sort(key=lambda x: x["block"], reverse=True)
-    return out
+    debug = {
+        "fromBlock": frm,
+        "toBlock": latest,
+        "raw_logs": len(logs),
+        "decoded_any": decoded_any,
+        "decode_errors": decode_errors,
+        "sample_error": sample_err,
+        "topic0": topic0,
+    }
+    return out, debug
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state
@@ -625,11 +670,13 @@ def render_dashboard():
         else:
             lookback = st.slider("Lookback blocks", 10_000, 2_000_000, 600_000, 10_000, key="my_lookback")
             with st.spinner("Fetching ticket purchases…"):
-                purchases = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
+                purchases, dbg = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
 
             if not purchases:
                 st.info("No TicketsBought events found for this wallet in the selected lookback range.")
                 st.caption("If you bought yesterday and this is empty: your event name may not be 'TicketsBought' OR your buy page is using a different contract.")
+                with st.expander("Debug: TicketsBought log scan", expanded=False):
+                    st.write(dbg)
             else:
                 st.markdown("#### Purchases")
                 st.dataframe(
