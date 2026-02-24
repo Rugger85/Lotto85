@@ -206,107 +206,154 @@ def get_round_snap():
 # ─────────────────────────────────────────────────────────────────────────────
 # Tickets: topic0-only logs, decode, filter buyer in Python
 # ─────────────────────────────────────────────────────────────────────────────
+import requests
+
+def _topic0_from_event_abi(event_abi: dict) -> str:
+    name = event_abi["name"]
+    types = ",".join(i["type"] for i in event_abi.get("inputs", []))
+    return Web3.keccak(text=f"{name}({types})").hex()
+
+@st.cache_data(ttl=120)
+def etherscan_v2_get_logs(chainid: int, address: str, topic0: str, from_block: int, to_block: int, api_key: str):
+    """
+    Etherscan API v2 logs endpoint (works for BNB with chainid=56)
+    """
+    url = "https://api.etherscan.io/v2/api"
+    params = {
+        "chainid": str(chainid),
+        "module": "logs",
+        "action": "getLogs",
+        "fromBlock": str(from_block),
+        "toBlock": str(to_block),
+        "address": address,
+        "topic0": topic0,
+        "apikey": api_key,
+    }
+    r = requests.get(url, params=params, timeout=25)
+    return r.json()
+
 @st.cache_data(ttl=120)
 def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
     if not lotto_c or not LOTTO_ABI:
         return [], {"err": "no_abi_or_contract"}
 
-    api_key = cfg("BSCSCAN_API_KEY", "")
+    api_key = cfg("ETHERSCAN_API_KEY", "")
     if not api_key:
-        return [], {"err": "missing_bscscan_api_key"}
+        return [], {"err": "missing_etherscan_api_key"}
 
     wallet = Web3.to_checksum_address(wallet)
     latest = int(w3.eth.block_number)
     frm = max(0, latest - int(lookback_blocks))
 
     event_name = "TicketsBought"
-    ev_abi = next(
-        (x for x in LOTTO_ABI if isinstance(x, dict) and x.get("type") == "event" and x.get("name") == event_name),
-        None
-    )
+    ev_abi = next((x for x in LOTTO_ABI if isinstance(x, dict) and x.get("type") == "event" and x.get("name") == event_name), None)
     if not ev_abi:
         return [], {"err": "event_not_in_abi"}
 
     topic0 = _topic0_from_event_abi(ev_abi)
 
-    # Pull logs from BscScan (no RPC eth_getLogs)
-    j = bscscan_get_logs(LOTTO_ADDR, topic0, frm, latest, api_key)
-
-    if str(j.get("status")) != "1":
-        return [], {"err": "bscscan_failed", "message": j.get("message"), "result": j.get("result")}
-
-    logs = j.get("result", [])
+    # Etherscan/BNBTrace can still limit big ranges -> scan in chunks
+    chunk = 50_000
     out = []
+    bsc_logs_total = 0
+    decoded_any = 0
     decode_errors = 0
     sample_err = None
-    decoded_any = 0
 
-    # helper: grab first address-like arg as buyer (ABI-agnostic)
     def find_buyer_addr(args):
+        # first address-like argument (don’t assume name buyer)
         for _, v in dict(args).items():
             if isinstance(v, str) and v.startswith("0x") and len(v) == 42:
                 return v
         return None
 
-    def get_int(args, name_candidates, idx_fallback):
-        for nm in name_candidates:
+    def get_int(args, names, idx):
+        for nm in names:
             if nm in args:
                 return int(args[nm])
         try:
-            key = ev_abi["inputs"][idx_fallback]["name"]
+            key = ev_abi["inputs"][idx]["name"]
             return int(args[key])
         except Exception:
             return 0
 
-    for lg in logs:
-        try:
-            # Convert BscScan log to web3-like dict
-            w3log = {
-                "address": Web3.to_checksum_address(lg["address"]),
-                "topics": [bytes.fromhex(t[2:]) for t in lg["topics"]],
-                "data": lg["data"],
-                "blockNumber": int(lg["blockNumber"], 16),
-                "transactionHash": bytes.fromhex(lg["transactionHash"][2:]),
-                "transactionIndex": int(lg["transactionIndex"], 16),
-                "logIndex": int(lg["logIndex"], 16),
-            }
+    start = frm
+    while start <= latest:
+        end = min(latest, start + chunk)
 
-            decoded = lotto_c.events.TicketsBought().process_log(w3log)
-            decoded_any += 1
-            args = decoded["args"]
+        j = etherscan_v2_get_logs(CHAIN_ID, LOTTO_CONTRACT, topic0, start, end, api_key)
 
-            buyer = find_buyer_addr(args)
-            if not buyer:
+        # Etherscan returns status/message/result
+        status = str(j.get("status", "0"))
+        if status != "1":
+            msg = str(j.get("message", ""))
+            res = j.get("result")
+            # if "No records found" it's fine; just move on
+            if "No records found" in msg:
+                start = end + 1
                 continue
-            if Web3.to_checksum_address(buyer) != wallet:
+            # otherwise reduce chunk and retry
+            if chunk > 2_000:
+                chunk = max(2_000, chunk // 2)
                 continue
+            return [], {"err": "etherscan_failed", "message": msg, "result": res, "fromBlock": start, "toBlock": end}
 
-            out.append({
-                "round": get_int(args, ["roundId", "round", "rid"], 1),
-                "qty": get_int(args, ["qty", "quantity", "count"], 2),
-                "first": get_int(args, ["firstTicketId", "first", "startId", "fromId"], 3),
-                "last": get_int(args, ["lastTicketId", "last", "endId", "toId"], 4),
-                "tx": "0x" + lg["transactionHash"][2:],
-                "block": int(lg["blockNumber"], 16),
-            })
-        except Exception as e:
-            decode_errors += 1
-            if sample_err is None:
-                sample_err = str(e)
+        logs = j.get("result", []) or []
+        bsc_logs_total += len(logs)
+
+        for lg in logs:
+            try:
+                # Convert API log to web3-like log for decoding
+                w3log = {
+                    "address": Web3.to_checksum_address(lg["address"]),
+                    "topics": [bytes.fromhex(t[2:]) for t in lg["topics"]],
+                    "data": lg["data"],
+                    "blockNumber": int(lg["blockNumber"], 16),
+                    "transactionHash": bytes.fromhex(lg["transactionHash"][2:]),
+                    "transactionIndex": int(lg.get("transactionIndex", "0x0"), 16),
+                    "logIndex": int(lg.get("logIndex", "0x0"), 16),
+                }
+
+                decoded = lotto_c.events.TicketsBought().process_log(w3log)
+                decoded_any += 1
+                args = decoded["args"]
+
+                buyer = find_buyer_addr(args)
+                if not buyer:
+                    continue
+                if Web3.to_checksum_address(buyer) != wallet:
+                    continue
+
+                out.append({
+                    "round": get_int(args, ["roundId", "round", "rid"], 1),
+                    "qty": get_int(args, ["qty", "quantity", "count"], 2),
+                    "first": get_int(args, ["firstTicketId", "first", "startId", "fromId"], 3),
+                    "last": get_int(args, ["lastTicketId", "last", "endId", "toId"], 4),
+                    "tx": "0x" + lg["transactionHash"][2:],
+                    "block": int(lg["blockNumber"], 16),
+                })
+            except Exception as e:
+                decode_errors += 1
+                if sample_err is None:
+                    sample_err = str(e)
+
+        start = end + 1
 
     out.sort(key=lambda x: x["block"], reverse=True)
     dbg = {
         "err": None,
         "fromBlock": frm,
         "toBlock": latest,
-        "bscscan_logs": len(logs),
+        "api_logs_total": bsc_logs_total,
         "decoded_any": decoded_any,
         "decode_errors": decode_errors,
         "sample_error": sample_err,
         "matches": len(out),
+        "final_chunk": chunk,
         "topic0": topic0,
     }
     return out, dbg
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state
 # ─────────────────────────────────────────────────────────────────────────────
