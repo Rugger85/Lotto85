@@ -715,7 +715,7 @@ else:
     "5th (5%)":    5,
     "6th (5%)":    5,
     "Admin (20%)": 20,
-}
+  }
  c1, c2, c3 = st.columns(3, gap="large")
 
     with c1:
