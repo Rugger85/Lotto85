@@ -3,7 +3,7 @@ from __future__ import annotations
 import os, json
 from pathlib import Path
 from datetime import datetime, timezone
-
+import requests
 import streamlit as st
 import plotly.graph_objects as go
 from web3 import Web3
@@ -206,10 +206,14 @@ def get_round_snap():
 # ─────────────────────────────────────────────────────────────────────────────
 # Tickets: topic0-only logs, decode, filter buyer in Python
 # ─────────────────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=60)
-def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 600_000):
+@st.cache_data(ttl=120)
+def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 200_000):
     if not lotto_c or not LOTTO_ABI:
         return [], {"err": "no_abi_or_contract"}
+
+    api_key = cfg("BSCSCAN_API_KEY", "")
+    if not api_key:
+        return [], {"err": "missing_bscscan_api_key"}
 
     wallet = Web3.to_checksum_address(wallet)
     latest = int(w3.eth.block_number)
@@ -225,19 +229,20 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 600_000):
 
     topic0 = _topic0_from_event_abi(ev_abi)
 
-    # --- Chunking controls ---
-    # Start bigger, auto-shrink on provider limits
-    chunk = 50_000
-    min_chunk = 2_000
+    # Pull logs from BscScan (no RPC eth_getLogs)
+    j = bscscan_get_logs(LOTTO_ADDR, topic0, frm, latest, api_key)
 
+    if str(j.get("status")) != "1":
+        return [], {"err": "bscscan_failed", "message": j.get("message"), "result": j.get("result")}
+
+    logs = j.get("result", [])
     out = []
     decode_errors = 0
-    decoded_any = 0
-    raw_logs_total = 0
     sample_err = None
+    decoded_any = 0
 
-    def find_buyer_addr(args) -> str | None:
-        # first address-ish field
+    # helper: grab first address-like arg as buyer (ABI-agnostic)
+    def find_buyer_addr(args):
         for _, v in dict(args).items():
             if isinstance(v, str) and v.startswith("0x") and len(v) == 42:
                 return v
@@ -253,82 +258,53 @@ def get_tickets_for_wallet(wallet: str, lookback_blocks: int = 600_000):
         except Exception:
             return 0
 
-    start = frm
-    while start <= latest:
-        end = min(latest, start + chunk)
-
+    for lg in logs:
         try:
-            logs = w3.eth.get_logs({
-                "fromBlock": start,
-                "toBlock": end,
-                "address": LOTTO_ADDR,
-                "topics": [topic0],
-            })
-            raw_logs_total += len(logs)
+            # Convert BscScan log to web3-like dict
+            w3log = {
+                "address": Web3.to_checksum_address(lg["address"]),
+                "topics": [bytes.fromhex(t[2:]) for t in lg["topics"]],
+                "data": lg["data"],
+                "blockNumber": int(lg["blockNumber"], 16),
+                "transactionHash": bytes.fromhex(lg["transactionHash"][2:]),
+                "transactionIndex": int(lg["transactionIndex"], 16),
+                "logIndex": int(lg["logIndex"], 16),
+            }
 
-            for lg in logs:
-                try:
-                    decoded = lotto_c.events.TicketsBought().process_log(lg)
-                    decoded_any += 1
-                    args = decoded["args"]
+            decoded = lotto_c.events.TicketsBought().process_log(w3log)
+            decoded_any += 1
+            args = decoded["args"]
 
-                    buyer = find_buyer_addr(args)
-                    if not buyer:
-                        continue
-                    if Web3.to_checksum_address(buyer) != wallet:
-                        continue
-
-                    round_id = get_int(args, ["roundId", "round", "rid"], 1)
-                    qty      = get_int(args, ["qty", "quantity", "count"], 2)
-                    first_id = get_int(args, ["firstTicketId", "first", "startId", "fromId"], 3)
-                    last_id  = get_int(args, ["lastTicketId", "last", "endId", "toId"], 4)
-
-                    out.append({
-                        "round": round_id,
-                        "qty": qty,
-                        "first": first_id,
-                        "last": last_id,
-                        "tx": lg["transactionHash"].hex(),
-                        "block": int(lg["blockNumber"]),
-                    })
-                except Exception as e:
-                    decode_errors += 1
-                    if sample_err is None:
-                        sample_err = str(e)
-
-            start = end + 1
-
-        except Exception as e:
-            msg = str(e)
-            # Provider limit hit => shrink chunk and retry same start..end
-            if "limit exceeded" in msg.lower() or "-32005" in msg:
-                if chunk <= min_chunk:
-                    return [], {
-                        "err": "limit_exceeded_even_min_chunk",
-                        "fromBlock": frm,
-                        "toBlock": latest,
-                        "raw_logs_total": raw_logs_total,
-                        "decoded_any": decoded_any,
-                        "decode_errors": decode_errors,
-                        "sample_error": sample_err,
-                        "chunk": chunk,
-                    }
-                chunk = max(min_chunk, chunk // 2)
+            buyer = find_buyer_addr(args)
+            if not buyer:
                 continue
-            return [], {"err": "get_logs_failed", "msg": msg}
+            if Web3.to_checksum_address(buyer) != wallet:
+                continue
+
+            out.append({
+                "round": get_int(args, ["roundId", "round", "rid"], 1),
+                "qty": get_int(args, ["qty", "quantity", "count"], 2),
+                "first": get_int(args, ["firstTicketId", "first", "startId", "fromId"], 3),
+                "last": get_int(args, ["lastTicketId", "last", "endId", "toId"], 4),
+                "tx": "0x" + lg["transactionHash"][2:],
+                "block": int(lg["blockNumber"], 16),
+            })
+        except Exception as e:
+            decode_errors += 1
+            if sample_err is None:
+                sample_err = str(e)
 
     out.sort(key=lambda x: x["block"], reverse=True)
     dbg = {
         "err": None,
         "fromBlock": frm,
         "toBlock": latest,
-        "raw_logs_total": raw_logs_total,
+        "bscscan_logs": len(logs),
         "decoded_any": decoded_any,
         "decode_errors": decode_errors,
         "sample_error": sample_err,
-        "final_chunk": chunk,
-        "topic0": topic0,
         "matches": len(out),
+        "topic0": topic0,
     }
     return out, dbg
 # ─────────────────────────────────────────────────────────────────────────────
@@ -697,7 +673,12 @@ def render_dashboard():
         else:
             lookback = st.slider("Lookback blocks", 10_000, 2_000_000, 600_000, 10_000, key="my_lookback")
             with st.spinner("Fetching ticket purchases…"):
-                purchases, dbg = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
+                purchases, dbg = get_tickets_for_wallet(wallet, int(lookback))
+                if dbg.get("err") == "missing_bscscan_api_key":
+                    st.error("Add BSCSCAN_API_KEY in Streamlit secrets to fetch ticket events (your RPC blocks eth_getLogs).")
+                else:
+                    with st.expander("Debug: TicketsBought scan", expanded=False):
+                        st.write(dbg)
 
             if not purchases:
                 st.info("No TicketsBought events found for this wallet in the selected lookback range.")
