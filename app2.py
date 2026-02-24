@@ -1011,6 +1011,7 @@ def render_dashboard():
         # My Tickets panel only if wallet exists and they clicked it
         if st.session_state.ui_mode == "my_tickets":
             st.markdown('<div class="card">', unsafe_allow_html=True)
+
             h1, h2 = st.columns([10, 1])
             with h1:
                 st.markdown('### <span class="yh">🎟️ My Tickets</span>', unsafe_allow_html=True)
@@ -1018,41 +1019,115 @@ def render_dashboard():
                 st.button("✕", on_click=lambda: st.session_state.update(ui_mode="home"), key="my_close")
 
             if not lotto_c:
-                st.warning("ABI not loaded — add `lotto_abi.json` to read TicketsBought events.")
-                st.markdown(f"[🔍 View events on BscScan](https://bscscan.com/address/{LOTTO_CONTRACT}#events)")
-            else:
-                lookback = st.slider("Lookback blocks", 10_000, 300_000, 120_000, 10_000, key="my_lookback")
-                with st.spinner("Fetching ticket purchases…"):
-                    purchases = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
+                st.warning("ABI not loaded — cannot fetch ticket events.")
+                st.markdown(f"[🔍 View on BscScan](https://bscscan.com/address/{LOTTO_CONTRACT}#events)")
+                st.markdown('</div>', unsafe_allow_html=True)
+            return
 
-                if not purchases:
-                    st.info("No TicketsBought events found in the selected lookback range.")
-                else:
-                    rounds = sorted({p["round"] for p in purchases}, reverse=True)
-                    pick_round = st.selectbox("Round", rounds, index=0, key="my_round_select")
-                    subset = [p for p in purchases if p["round"] == pick_round]
-                    expand = st.checkbox("Expand ticket numbers (qty ≤ 50)", value=False, key="my_expand")
+            lookback = st.slider("Lookback blocks", 10_000, 300_000, 120_000, 10_000, key="my_lookback")
 
-                    for p in subset:
-                        qty2  = int(p["qty"])
-                        start = int(p["first"])
-                        end   = int(p["last"])
-                        tx    = p["tx"]
-                        st.markdown(
-                            f'<div class="ticket-row">'
-                            f'<div style="font-weight:950;">Round #{p["round"]} · Qty: {qty2}</div>'
-                            f'<div class="muted" style="font-size:12px; margin-top:6px;">'
-                            f'Tickets: <b>{start}</b> → <b>{end}</b><br/>'
-                            f'Tx: <a href="https://bscscan.com/tx/{tx}" target="_blank">{fmt_addr(tx)} ↗</a>'
-                            f'</div></div>',
-                            unsafe_allow_html=True,
-                        )
-                        if expand and qty2 <= 50:
-                            st.code(", ".join(map(str, range(start, end + 1))), language="text")
+            with st.spinner("Fetching ticket purchases…"):
+                purchases = get_tickets_for_wallet(wallet, lookback_blocks=int(lookback))
 
+            if not purchases:
+                st.info("No tickets found for this wallet in selected range.")
+                st.markdown('</div>', unsafe_allow_html=True)
+            return
+
+    # ---- Expand tickets ----
+            rows = []
+            total_tickets = 0
+
+            for p in purchases:
+                qty = int(p["qty"])
+                start = int(p["first"])
+                end = int(p["last"])
+                tx = p["tx"]
+                blk = p.get("block", 0)
+
+            total_tickets += qty
+
+            for tid in range(start, end + 1):
+                rows.append({
+                    "wallet": wallet,
+                    "ticket": tid,
+                    "block": blk,
+                    "tx": tx
+                })
+
+    # ---- Ticket Count Strip ----
+            st.markdown(
+                f'''
+                <div style="
+                    background: linear-gradient(90deg, #1e293b, #0f172a);
+                    padding:16px;
+                    border-radius:12px;
+                    margin-bottom:18px;
+                    border:1px solid rgba(255,255,255,0.05);
+                ">
+                    <div style="font-size:13px; opacity:.7;">Linked Wallet</div>
+                    <div style="font-size:18px; font-weight:800; color:{ACCENT};">
+                        {fmt_addr(wallet)}
+                    </div>
+                    <div style="margin-top:8px; font-size:16px;">
+                        🎟 Total Tickets: <b>{total_tickets}</b>
+                    </div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+
+    # ---- Table Header ----
+            st.markdown(
+                '''
+                <div style="
+                    display:grid;
+                    grid-template-columns: 1fr 2fr;
+                    padding:10px 14px;
+                    font-weight:800;
+                    border-bottom:1px solid rgba(255,255,255,0.08);
+                    opacity:.8;
+                ">
+                    <div>Wallet</div>
+                    <div>Ticket • Block • Tx</div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+
+            # ---- Ticket Rows ----
+            for r in rows:
+                st.markdown(
+                    f'''
+                    <div style="
+                        display:grid;
+                        grid-template-columns: 1fr 2fr;
+                        padding:12px 14px;
+                        border-bottom:1px solid rgba(255,255,255,0.05);
+                        align-items:center;
+                    ">
+                        <div style="font-weight:700;">
+                            {fmt_addr(r["wallet"])}
+                        </div>
+        
+                        <div>
+                            🎟 <b>{r["ticket"]}</b>
+                            <span style="opacity:.6; font-size:12px;">
+                                · Block {r["block"]:,}
+                            </span>
+                            <br>
+                            <a href="https://bscscan.com/tx/{r["tx"]}" target="_blank"
+                               style="font-size:12px; opacity:.7;">
+                               {fmt_addr(r["tx"])} ↗
+                            </a>
+                        </div>
+                    </div>
+                    ''',
+                    unsafe_allow_html=True
+                )
+        
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
-
     # ✅ Analytics row ALWAYS (wallet or not)
     c1, c2, c3 = st.columns(3, gap="large")
 
