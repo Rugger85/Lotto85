@@ -59,7 +59,7 @@ a:hover {{ text-decoration:underline; }}
   background:rgba(98,193,229,.14);
   border:1px solid rgba(98,193,229,.28);
   color:{ACCENT};
-  font-size:14px;
+  font-size:20px;
   font-weight:900;
   letter-spacing:.6px;
   text-transform:uppercase;
