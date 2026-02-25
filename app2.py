@@ -435,7 +435,7 @@ with t2:
 
 with t3:
     st.markdown(
-        '<span class="disclaimer">Disclaimer! All the tickets sold will expire after each draw round. New tickets will be issued for the next round</span>',
+        '<span class="disclaimer"><b>Disclaimer:</b> Tickets are valid for one draw round only. After each draw, all tickets expire and new tickets are issued for the next round.</span>',
         unsafe_allow_html=True
     )
 
