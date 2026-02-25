@@ -392,7 +392,7 @@ draw_str  = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
 # ─────────────────────────────────────────────────────────────────────────────
 l, r = st.columns([2, 3], gap="small")
 with l:
-    st.markdown("### 🎰 LOTTO")
+    st.markdown("### 🛡️ LOTTO")
     st.markdown(
         f'<span class="pill">{net_badge}</span> &nbsp; Block: <b>{snap["block"]:,}</b>',
         unsafe_allow_html=True
@@ -571,7 +571,7 @@ else:
         st.warning("DATABASE_URL / NEON_DSN not set. Add it in Streamlit secrets to show tickets from Neon.")
         st.stop()
 
-    st.subheader("🎟️ My Tickets")
+    st.subheader("🎫 My Tickets")
 
     try:
         rows = db_get_tickets(engine, wallet)
@@ -611,7 +611,7 @@ else:
     c1, c2, c3 = st.columns(3, gap="large")
 
     with c1:
-        st.markdown('#### <span class="yh">🏆 Prize Structure</span>', unsafe_allow_html=True)
+        st.markdown('#### <span class="yh">🪙 Prize Structure</span>', unsafe_allow_html=True)
         st.plotly_chart(donut(PRIZE_SPLIT), use_container_width=True, config={"displayModeBar": False})
         for lbl, pct in PRIZE_SPLIT.items():
             st.write(f"**{lbl}** — {pool * pct / 100:,.2f} {sym}")
