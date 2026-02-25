@@ -522,10 +522,13 @@ if st.session_state.active_tab == "landing":
   <div class="info-card-icon">⚙️</div>
   <div class="info-card-title">How It Works</div>
   <div class="info-card-body">
-    <span class="step">1</span> Connect your wallet<br/>
+    <span class="step">1</span> Connect your MetaMask wallet<br/>
     <span class="step">2</span> Approve USDT spend<br/>
     <span class="step">3</span> Buy tickets &amp; receive a range<br/>
-    <span class="step">4</span> Draw happens on-chain automatically
+    <span class="step">4</span> Your Ticket ID is stored against your Transaction Hash (verifiable on etherscan.io)<br/>
+    <span class="step">5</span> Sales closes 5 days prior to the Draw<br/>
+    <span class="step">6</span> Draw happens on-chain automatically<br/>
+    <span class="step">7</span> Winners announcement and instant distribution of Prize in USDT
   </div>
 </div>""",
             unsafe_allow_html=True,
