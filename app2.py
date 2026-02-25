@@ -39,7 +39,7 @@ st.markdown(
 a {{ color:{ACCENT} !important; text-decoration:none; }}
 a:hover {{ text-decoration:underline; }}
 
-.yh    {{ color:{ACCENT} !important; font-size:24px; font-weight:900 !important; }}
+.yh    {{ color:{ACCENT} !important; font-size:58px; font-weight:900 !important; }}
 .muted {{ color:rgba(233,238,247,.60); }}
 .white {{ color:#e9eef7 !important; }}
 .hdiv  {{ height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent); margin:20px 0; }}
