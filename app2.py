@@ -408,7 +408,7 @@ with r:
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Tabs
-t1, t2, t3, _ = st.columns([1, 1, 1, 5])
+t1, t2, t3, _ = st.columns([1, 1, 8])
 with t1:
     if st.button("🏠 Home"):
         st.session_state.active_tab = "landing"
