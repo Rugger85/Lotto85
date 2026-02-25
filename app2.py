@@ -429,7 +429,7 @@ if st.session_state.active_tab == "landing":
     with left:
         st.markdown('<span class="pill">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
         st.markdown(
-            '<span class="pill" style="font-size:64px;">Transparent · On-Chain · Auditable</span>'
+            f'<div class="heroTitle white" style="font-size:64px;">LOTTO<span class="yh">.</span><br/>'
             f'A verifiable lottery<br/>built on <span class="yh">BSC</span></div>',
             unsafe_allow_html=True,
         )
