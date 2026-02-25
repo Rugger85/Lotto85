@@ -14,7 +14,7 @@ from sqlalchemy.engine import Engine
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit setup
 # ─────────────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="LOTTO", layout="wide", page_icon="🎰")
+st.set_page_config(page_title="LOTTO", layout="wide", page_icon="⚡")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Global CSS
@@ -406,7 +406,7 @@ draw_str  = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
 # ─────────────────────────────────────────────────────────────────────────────
 l, r = st.columns([2, 3], gap="small")
 with l:
-    st.markdown("### ⛓️ LOTTO")
+    st.markdown("#### ⚡ LOTTO")
     st.markdown(
         f'<span class="pill">{net_badge}</span> &nbsp; Block: <b>{snap["block"]:,}</b>',
         unsafe_allow_html=True
