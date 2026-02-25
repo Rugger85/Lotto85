@@ -407,18 +407,23 @@ with r:
 
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-# Tabs
-t1, t2, t3, _ = st.columns([1, 1, 8])
+t1, t2, t3 = st.columns([1, 1, 8])
+
 with t1:
     if st.button("🏠 Home"):
         st.session_state.active_tab = "landing"
         st.rerun()
+
 with t2:
     if st.button("📊 Dashboard"):
         st.session_state.active_tab = "dashboard"
         st.rerun()
+
 with t3:
-    st.markdown('<span class="pill" style="font-size:18px;">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
+    st.markdown(
+        '<span class="pill" style="font-size:18px;">Transparent · On-Chain · Auditable · Provably Fair · Global Access</span>',
+        unsafe_allow_html=True
+    )
 
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
