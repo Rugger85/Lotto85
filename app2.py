@@ -65,6 +65,20 @@ a:hover {{ text-decoration:underline; }}
   text-transform:uppercase;
 }}
 
+/* Soft pulsing glow */
+@keyframes pulseGlow {
+    0%   { text-shadow: 0 0 4px rgba(255,77,77,0.4); }
+    50%  { text-shadow: 0 0 10px rgba(255,77,77,0.9); }
+    100% { text-shadow: 0 0 4px rgba(255,77,77,0.4); }
+}
+
+.disclaimer{
+    color:#ff4d4d;
+    font-size:18px;
+    font-weight:600;
+    animation: pulseGlow 2.5s infinite ease-in-out;
+}
+
 .kpi {{ border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.03); border-radius:16px; padding:16px; }}
 .kpi .t {{ font-size:11px; letter-spacing:1px; font-weight:900; color:rgba(233,238,247,.70); text-transform:uppercase; }}
 .kpi .v {{ font-size:26px; font-weight:950; color:{ACCENT}; margin-top:4px; line-height:1.1; }}
@@ -421,7 +435,7 @@ with t2:
 
 with t3:
     st.markdown(
-        '<span class="pill" style="font-size:18px;">Transparent · On-Chain · Auditable · Provably Fair · Global Access</span>',
+        '<span class="disclaimer">Transparent · On-Chain · Auditable · Provably Fair · Global Access</span>',
         unsafe_allow_html=True
     )
 
