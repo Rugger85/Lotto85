@@ -472,28 +472,28 @@ if st.session_state.active_tab == "landing":
             unsafe_allow_html=True,
         )
 
-        st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
 
-        # # Wallet input to unlock dashboard
-        # st.markdown('<div class="card">', unsafe_allow_html=True)
-        # st.markdown('### <span class="yh">Connect via Address</span>', unsafe_allow_html=True)
-        # st.markdown('<div class="muted">Paste your wallet address to view your ticket purchases.</div>', unsafe_allow_html=True)
+    # # Wallet input to unlock dashboard
+    # st.markdown('<div class="card">', unsafe_allow_html=True)
+    # st.markdown('### <span class="yh">Connect via Address</span>', unsafe_allow_html=True)
+    # st.markdown('<div class="muted">Paste your wallet address to view your ticket purchases.</div>', unsafe_allow_html=True)
 
-        addr = st.text_input(
-            "Wallet address",
-            key="manual_wallet",
-            placeholder="0x1234…abcd",
-            label_visibility="visible"
-        )
-        b1, b2 = st.columns([1, 1], gap="small")
-        with b1:
-            if st.button("✅ Use Address", key="use_addr_btn"):
-                if not valid_wallet(addr):
-                    st.error("Please enter a valid wallet address (0x… 42 chars).")
-                else:
-                    set_wallet_and_go(addr)
-        with b2:
-            st.link_button("🦊 Open Buy Page", BUY_DAPP_URL)
+    addr = st.text_input(
+        "Wallet address",
+        key="manual_wallet",
+        placeholder="0x1234…abcd",
+        label_visibility="visible"
+    )
+    b1, b2 = st.columns([1, 1], gap="small")
+    with b1:
+        if st.button("✅ Use Address", key="use_addr_btn"):
+            if not valid_wallet(addr):
+                st.error("Please enter a valid wallet address (0x… 42 chars).")
+            else:
+                set_wallet_and_go(addr)
+        # with b2:
+        #     st.link_button("🦊 Open Buy Page", BUY_DAPP_URL)
 
         # st.markdown('</div>', unsafe_allow_html=True)
 
