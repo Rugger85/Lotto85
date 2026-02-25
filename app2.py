@@ -39,7 +39,7 @@ st.markdown(
 a {{ color:{ACCENT} !important; text-decoration:none; }}
 a:hover {{ text-decoration:underline; }}
 
-.yh    {{ color:{ACCENT} !important; font-weight:900 !important; }}
+.yh    {{ color:{ACCENT} !important; font-size:24px; font-weight:900 !important; }}
 .muted {{ color:rgba(233,238,247,.60); }}
 .white {{ color:#e9eef7 !important; }}
 .hdiv  {{ height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent); margin:20px 0; }}
@@ -72,7 +72,7 @@ a:hover {{ text-decoration:underline; }}
 
 .big {{ font-size:44px; font-weight:950; color:{ACCENT}; line-height:1; }}
 
-.heroTitle {{ font-size:46px; font-weight:1000; line-height:1.03; margin:6px 0 8px; }}
+.heroTitle {{ font-size:72px; font-weight:1000; line-height:1.03; margin:6px 0 8px; }}
 .heroSub   {{ font-size:14px; color:rgba(233,238,247,.64); max-width:58ch; }}
 
 div.stButton > button {{
