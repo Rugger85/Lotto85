@@ -66,18 +66,18 @@ a:hover {{ text-decoration:underline; }}
 }}
 
 /* Soft pulsing glow */
-@keyframes pulseGlow {
-    0%   { text-shadow: 0 0 4px rgba(255,77,77,0.4); }
-    50%  { text-shadow: 0 0 10px rgba(255,77,77,0.9); }
-    100% { text-shadow: 0 0 4px rgba(255,77,77,0.4); }
-}
+@keyframes pulseGlow {{
+    0%   {{ text-shadow: 0 0 4px rgba(255,77,77,0.4); }}
+    50%  {{ text-shadow: 0 0 10px rgba(255,77,77,0.9); }}
+    100% {{ text-shadow: 0 0 4px rgba(255,77,77,0.4); }}
+}}
 
-.disclaimer{
+.disclaimer{{
     color:#ff4d4d;
     font-size:18px;
     font-weight:600;
     animation: pulseGlow 2.5s infinite ease-in-out;
-}
+}}
 
 .kpi {{ border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.03); border-radius:16px; padding:16px; }}
 .kpi .t {{ font-size:11px; letter-spacing:1px; font-weight:900; color:rgba(233,238,247,.70); text-transform:uppercase; }}
