@@ -438,8 +438,14 @@ with t2:
 
 with t3:
     st.markdown(
-        '<span class="disclaimer"><b>Disclaimer:</b> Tickets are valid for one draw round only. After each draw, all tickets expire and new tickets are issued for the next round.<b/><b/>
-        Make sure to have $0.05 to $0.20 worth of BNB in your MetaMask wallet to buy the tickets</span>',
+        f'''
+<span class="disclaimer">
+<b>Disclaimer:</b> Tickets are valid for one draw round only. After each draw, all tickets expire and new tickets are issued for the next round.<br><br>
+<span style="color:{ACCENT}; font-weight:600;">
+Make sure to have $0.05 to $0.20 worth of BNB in your MetaMask wallet to buy the tickets
+</span>
+</span>
+''',
         unsafe_allow_html=True
     )
 
