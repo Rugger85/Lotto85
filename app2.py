@@ -418,7 +418,7 @@ with t2:
         st.session_state.active_tab = "dashboard"
         st.rerun()
 with t3:
-    st.markdown("### ⛓️ LOTTO")
+    st.markdown('<span class="pill" style="font-size:18px;">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
 
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
