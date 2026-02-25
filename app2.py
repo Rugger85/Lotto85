@@ -540,8 +540,8 @@ if st.session_state.active_tab == "landing":
   <div class="info-card-icon">🦊</div>
   <div class="info-card-title">Wallets</div>
   <div class="info-card-body">
-    Use <b>Google Chrome browser</b>, add extention of MetaMask for chrome and run this application on google chrome (due to privacy settings of other browsers it may not work). <br/><br/>
-    Use <b>MetaMask</b> to buy tickets and sign transactions.<br/><br/>
+    Use <b style="color:#62c1e5; font-size:16px;">Google Chrome browser</b>, add extention of MetaMask for chrome and run this application on google chrome (due to privacy settings of other browsers it may not work). <br/><br/>
+    Use <b>MetaMask</b> to buy tickets and sign transactions by using <b style="color:#62c1e5; font-size:16px;"> Open Buy Page.</b><br/><br/>
     Use <b>Manual Address</b> to view the dashboard in read-only
     mode without connecting a wallet.
   </div>
