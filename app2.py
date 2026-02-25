@@ -327,6 +327,18 @@ def get_round_snap():
         return {}
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ✅ NEW: read prize split from contract (adminFeeBps + winnerPct)
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=30)
+def get_prize_config():
+    admin_bps = int(safe(lambda: lotto_c.functions.adminFeeBps().call(), 2000))
+    winner_pct = [int(safe(lambda i=i: lotto_c.functions.winnerPct(i).call(), 0)) for i in range(6)]
+    # fallback if something weird comes back
+    if sum(winner_pct) != 100:
+        winner_pct = [40, 25, 15, 10, 5, 5]
+    return admin_bps, winner_pct
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Neon helpers (ONLY used in Dashboard after wallet)
 # ─────────────────────────────────────────────────────────────────────────────
 def _normalize_db_url(url: str) -> str:
@@ -407,9 +419,9 @@ draw_str  = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
 l, r = st.columns([2, 3], gap="small")
 with l:
     st.markdown(
-    f'#### ⚡ LOTTO<b style="color:{ACCENT}; font-size:28px;">85</b>',
-    unsafe_allow_html=True
-)
+        f'#### ⚡ LOTTO<b style="color:{ACCENT}; font-size:28px;">85</b>',
+        unsafe_allow_html=True
+    )
     st.markdown(
         f'<span class="pill">{net_badge}</span> &nbsp; Block: <b>{snap["block"]:,}</b>',
         unsafe_allow_html=True
@@ -505,11 +517,6 @@ if st.session_state.active_tab == "landing":
 
     st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
 
-    # # Wallet input to unlock dashboard
-    # st.markdown('<div class="card">', unsafe_allow_html=True)
-    # st.markdown('### <span class="yh">Connect via Address</span>', unsafe_allow_html=True)
-    # st.markdown('<div class="muted">Paste your wallet address to view your ticket purchases.</div>', unsafe_allow_html=True)
-
     addr = st.text_input(
         "Wallet address",
         key="manual_wallet",
@@ -523,10 +530,6 @@ if st.session_state.active_tab == "landing":
                 st.error("Please enter a valid wallet address (0x… 42 chars).")
             else:
                 set_wallet_and_go(addr)
-        # with b2:
-        #     st.link_button("🦊 Open Buy Page", BUY_DAPP_URL)
-
-        # st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div style="height:24px"></div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3, gap="medium")
@@ -542,7 +545,8 @@ if st.session_state.active_tab == "landing":
     round states so anyone can verify every draw independently.<br/><br/>
     Decentralized lottery, a purpose-built, community-based project. Our aim is to utilize blockchain technology to help the community at large. Anti-Whale, no speculation, pure luck! We do not plan to make tokens available for trading on any exchange as of now or in the future, you buy the ticket at the same price, and you get to keep it.<br/><br/>
     Each month, <b style="color:#62c1e5; font-size:16px;">6 lucky winners</b> are chosen through a draw verifiable on-chain. Hey! That lucky one can be you! Ticket price is kept at a price which you pay for a single bank transaction. Good news is, you pay taxes according to your own regions and can participate in it from anywhere in the world. <br/><br/>
-    <b style="color:#62c1e5; font-size:16px;">How about starting with just $2 and join in with us on this amazing experience. We are about to make a day, a week, a year or lifetime of our lucky winners!</b>   </div>
+    <b style="color:#62c1e5; font-size:16px;">How about starting with just $2 and join in with us on this amazing experience. We are about to make a day, a week, a year or lifetime of our lucky winners!</b>
+  </div>
 </div>""",
             unsafe_allow_html=True,
         )
@@ -589,7 +593,6 @@ else:
         st.info("Paste wallet on Home to view your tickets.")
         st.stop()
 
-    # st.markdown('<div class="card">', unsafe_allow_html=True)
     st.write(f"Wallet: **{fmt_addr(wallet)}**")
     st.write(f"Pool: **{pool:,.2f} {sym}** · Ticket Price: **{price_str}** · Tickets Sold: **{sold}**")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -628,23 +631,49 @@ else:
 
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-    # Analytics section (only in dashboard + wallet connected)
-    PRIZE_SPLIT = {
-        "1st (30%)":  30,
-        "2nd (15%)":  15,
-        "3rd (15%)":  15,
-        "4th (10%)":  10,
-        "5th (10%)":  10,
-        "Admin (20%)": 20,
+    # ─────────────────────────────────────────────────────────────────────────
+    # ✅ FIXED DISTRIBUTION (from contract) + show split clearly
+    # ─────────────────────────────────────────────────────────────────────────
+    admin_bps, winner_pct = get_prize_config()
+
+    admin_pct = admin_bps / 100  # 2000 -> 20.0
+    prize_pool_pct = 100.0 - admin_pct
+
+    admin_amt = pool * (admin_pct / 100.0)
+    pot_after_fee = pool - admin_amt
+
+    ADMIN_SPLIT = {
+        f"Prize Pool ({prize_pool_pct:.0f}%)": int(round(prize_pool_pct)),
+        f"Admin ({admin_pct:.0f}%)": int(round(admin_pct)),
+    }
+
+    WINNER_SPLIT = {
+        f"1st ({winner_pct[0]}%)": winner_pct[0],
+        f"2nd ({winner_pct[1]}%)": winner_pct[1],
+        f"3rd ({winner_pct[2]}%)": winner_pct[2],
+        f"4th ({winner_pct[3]}%)": winner_pct[3],
+        f"5th ({winner_pct[4]}%)": winner_pct[4],
+        f"6th ({winner_pct[5]}%)": winner_pct[5],
     }
 
     c1, c2, c3 = st.columns(3, gap="large")
 
     with c1:
         st.markdown('#### <span class="yh" style="font-size:20px;">🪙 Prize Structure</span>', unsafe_allow_html=True)
-        st.plotly_chart(donut(PRIZE_SPLIT), use_container_width=True, config={"displayModeBar": False})
-        for lbl, pct in PRIZE_SPLIT.items():
-            st.write(f"**{lbl}** — {pool * pct / 100:,.2f} {sym}")
+
+        st.caption("Admin fee is taken first. Winners are paid from the remaining prize pool.")
+        st.plotly_chart(donut(ADMIN_SPLIT), use_container_width=True, config={"displayModeBar": False})
+
+        st.write(f"**Admin Fee ({admin_pct:.0f}%)** — {admin_amt:,.2f} {sym}")
+        st.write(f"**Prize Pool After Fee ({prize_pool_pct:.0f}%)** — {pot_after_fee:,.2f} {sym}")
+
+        st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
+        st.plotly_chart(donut(WINNER_SPLIT), use_container_width=True, config={"displayModeBar": False})
+
+        # Show real payouts based on pot_after_fee
+        for i, (lbl, pct) in enumerate(WINNER_SPLIT.items()):
+            amt = pot_after_fee * (pct / 100.0)
+            st.write(f"**{lbl}** — {amt:,.2f} {sym}")
 
     with c2:
         st.markdown('#### <span class="yh" style="font-size:20px;">🧾 Recent Transfers</span>', unsafe_allow_html=True)
