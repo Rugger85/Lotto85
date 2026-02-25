@@ -506,12 +506,12 @@ if st.session_state.active_tab == "landing":
   <div class="info-card-icon">💡</div>
   <div class="info-card-title">The Idea</div>
   <div class="info-card-body">
-    A lottery should be <b style="color:#f5c400; font-size:20px;">provable</b> — not just "trust us".
+    A lottery should be <b style="color:#62c1e5; font-size:16px;">provable</b> — not just "trust us".
     LOTTO surfaces live on-chain pool data, ticket purchases, and
     round states so anyone can verify every draw independently.
     Decentralized lottery, a purpose-built, community-based project. Our aim is to utilize blockchain technology to help the community at large. Anti-Whale, no speculation, pure luck! We do not plan to make tokens available for trading on any exchange as of now or in the future, you buy the ticket at the same price, and you get to keep it.
-    Each month, <b style="color:#f5c400; font-size:20px;">6 lucky winners</b> are chosen through a draw verifiable on-chain. Hey! That lucky one can be you! Ticket price is kept at a price which you pay for a single bank transaction. Good news is, you pay taxes according to your own regions and can participate in it from anywhere in the world. 
-    <b style="color:#f5c400; font-size:20px;">How about starting with just $2 and join in with us on this amazing experience. We are about to make a day, a week, a year or lifetime of our lucky winners!</b>   </div>
+    Each month, <b style="color:#62c1e5; font-size:16px;">6 lucky winners</b> are chosen through a draw verifiable on-chain. Hey! That lucky one can be you! Ticket price is kept at a price which you pay for a single bank transaction. Good news is, you pay taxes according to your own regions and can participate in it from anywhere in the world. 
+    <b style="color:#62c1e5; font-size:16px;">How about starting with just $2 and join in with us on this amazing experience. We are about to make a day, a week, a year or lifetime of our lucky winners!</b>   </div>
 </div>""",
             unsafe_allow_html=True,
         )
