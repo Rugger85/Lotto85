@@ -406,7 +406,10 @@ draw_str  = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
 # ─────────────────────────────────────────────────────────────────────────────
 l, r = st.columns([2, 3], gap="small")
 with l:
-    st.markdown("#### ⚡ LOTTO<b style="color:{ACCENT}">85</b>")
+    st.markdown(
+    f'#### ⚡ LOTTO<b style="color:{ACCENT}; font-size:28px;">85</b>',
+    unsafe_allow_html=True
+)
     st.markdown(
         f'<span class="pill">{net_badge}</span> &nbsp; Block: <b>{snap["block"]:,}</b>',
         unsafe_allow_html=True
