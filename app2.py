@@ -630,12 +630,11 @@ else:
 
     # Analytics section (only in dashboard + wallet connected)
     PRIZE_SPLIT = {
-        "1st (40%)":  40,
-        "2nd (25%)":  25,
+        "1st (30%)":  30,
+        "2nd (15%)":  15,
         "3rd (15%)":  15,
         "4th (10%)":  10,
-        "5th (5%)":    5,
-        "6th (5%)":    5,
+        "5th (10%)":  10,
         "Admin (20%)": 20,
     }
 
