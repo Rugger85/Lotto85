@@ -408,7 +408,7 @@ with r:
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Tabs
-t1, t2, _ = st.columns([1, 1, 6])
+t1, t2, t3, _ = st.columns([1, 1, 1, 5])
 with t1:
     if st.button("🏠 Home"):
         st.session_state.active_tab = "landing"
@@ -417,6 +417,8 @@ with t2:
     if st.button("📊 Dashboard"):
         st.session_state.active_tab = "dashboard"
         st.rerun()
+with t3:
+    st.markdown("### ⛓️ LOTTO")
 
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
