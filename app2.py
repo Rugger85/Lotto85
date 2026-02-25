@@ -421,7 +421,7 @@ with t2:
 
 with t3:
     st.markdown(
-        '<'#### <span class="yh" style="font-size:20px;">Disclaimer</span>',
+        '<span class="pill" style="font-size:18px;">Transparent · On-Chain · Auditable · Provably Fair · Global Access</span>',
         unsafe_allow_html=True
     )
 
