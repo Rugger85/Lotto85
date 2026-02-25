@@ -406,7 +406,7 @@ draw_str  = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
 # ─────────────────────────────────────────────────────────────────────────────
 l, r = st.columns([2, 3], gap="small")
 with l:
-    st.markdown("#### ⚡ LOTTO85")
+    st.markdown("#### ⚡ LOTTO<b style="color:{ACCENT}">85</b>")
     st.markdown(
         f'<span class="pill">{net_badge}</span> &nbsp; Block: <b>{snap["block"]:,}</b>',
         unsafe_allow_html=True
@@ -450,7 +450,7 @@ if st.session_state.active_tab == "landing":
     with left:
         st.markdown('<span class="pill">Transparent · On-Chain · Auditable</span>', unsafe_allow_html=True)
         st.markdown(
-            f'<div class="heroTitle white">LOTTO<b style="color:{ACCENT}">85</b><span class="yh">.</span><br/>'
+            f'<div class="heroTitle white">LOTTO<b style="color:{ACCENT}">85</b>.<br/>'
             f'A verifiable lottery<br/>built on <span class="yh">BSC</span></div>',
             unsafe_allow_html=True,
         )
