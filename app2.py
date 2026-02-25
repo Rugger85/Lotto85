@@ -74,7 +74,7 @@ a:hover {{ text-decoration:underline; }}
 
 .disclaimer{{
     color:#ff4d4d;
-    font-size:18px;
+    font-size:24px;
     font-weight:600;
     animation: pulseGlow 2.5s infinite ease-in-out;
 }}
