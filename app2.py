@@ -611,17 +611,17 @@ else:
     c1, c2, c3 = st.columns(3, gap="large")
 
     with c1:
-        st.markdown('#### <span class="yh" style="font-size:18px;">🪙 Prize Structure</span>', unsafe_allow_html=True)
+        st.markdown('#### <span class="yh" style="font-size:20px;">🪙 Prize Structure</span>', unsafe_allow_html=True)
         st.plotly_chart(donut(PRIZE_SPLIT), use_container_width=True, config={"displayModeBar": False})
         for lbl, pct in PRIZE_SPLIT.items():
             st.write(f"**{lbl}** — {pool * pct / 100:,.2f} {sym}")
 
     with c2:
-        st.markdown('#### <span class="yh" style="font-size:18px;">🧾 Recent Transfers</span>', unsafe_allow_html=True)
+        st.markdown('#### <span class="yh" style="font-size:20px;">🧾 Recent Transfers</span>', unsafe_allow_html=True)
         st.caption("Coming soon (optional on-chain transfer scan).")
 
     with c3:
-        st.markdown('#### <span class="yh" style="font-size:18px;">📈 Platform Stats</span>', unsafe_allow_html=True)
+        st.markdown('#### <span class="yh" style="font-size:20px;">📈 Platform Stats</span>', unsafe_allow_html=True)
         st.metric("USDT (Contract)", f"{snap['c_usdt']:,.2f} {sym}")
         st.metric("USDT (Admin)",    f"{snap['a_usdt']:,.2f} {sym}")
         st.metric("BNB (Contract)",  f"{snap['c_bnb']:.6f}")
