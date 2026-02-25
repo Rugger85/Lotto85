@@ -442,7 +442,7 @@ with t3:
 <span class="disclaimer">
 <b>Disclaimer:</b> Tickets are valid for one draw round only. After each draw, all tickets expire and new tickets are issued for the next round.<br><br>
 <span style="color:{ACCENT}; font-weight:600;">
-Make sure to have $0.05 to $0.20 worth of BNB in your MetaMask wallet to buy the tickets
+Make sure to have $0.05 to $0.20 worth of BNB and Min of $2.1 USDT in your MetaMask wallet to buy the tickets
 </span>
 </span>
 ''',
