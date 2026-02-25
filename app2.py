@@ -406,7 +406,7 @@ draw_str  = rsnap.get("draw_str", "N/A") if rsnap else "N/A"
 # ─────────────────────────────────────────────────────────────────────────────
 l, r = st.columns([2, 3], gap="small")
 with l:
-    st.markdown("#### ⚡ LOTTO")
+    st.markdown("#### ⚡ LOTTO (Trial Version)")
     st.markdown(
         f'<span class="pill">{net_badge}</span> &nbsp; Block: <b>{snap["block"]:,}</b>',
         unsafe_allow_html=True
@@ -435,7 +435,7 @@ with t2:
 
 with t3:
     st.markdown(
-        '<span class="disclaimer">Transparent · On-Chain · Auditable · Provably Fair · Global Access</span>',
+        '<span class="disclaimer">Disclaimer! All the tickets sold will expire after each draw round. New tickets will be issued for the next round</span>',
         unsafe_allow_html=True
     )
 
