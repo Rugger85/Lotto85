@@ -39,7 +39,7 @@ st.markdown(
 a {{ color:{ACCENT} !important; text-decoration:none; }}
 a:hover {{ text-decoration:underline; }}
 
-.yh    {{ color:{ACCENT} !important; font-size:20px; font-weight:900 !important; }}
+.yh    {{ color:{ACCENT} !important; font-size:58px; font-weight:900 !important; }}
 .muted {{ color:rgba(233,238,247,.60); }}
 .white {{ color:#e9eef7 !important; }}
 .hdiv  {{ height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent); margin:20px 0; }}
@@ -59,7 +59,7 @@ a:hover {{ text-decoration:underline; }}
   background:rgba(98,193,229,.14);
   border:1px solid rgba(98,193,229,.28);
   color:{ACCENT};
-  font-size:20px;
+  font-size:16px;
   font-weight:900;
   letter-spacing:.6px;
   text-transform:uppercase;
