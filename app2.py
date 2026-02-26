@@ -856,7 +856,8 @@ else:
             """,
             unsafe_allow_html=True
         )
-    
+        st.markdown(" ")
+        st.markdown(" ")
         # st.caption("Admin fee is taken first. Winners are paid from the remaining prize pool.")
     
         # 👇 FIRST DONUT (Admin vs Pool)
