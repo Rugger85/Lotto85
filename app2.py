@@ -382,6 +382,119 @@ def db_get_tickets(engine: Engine, buyer: str):
         )).fetchall()
     return rows
 
+#______________________________________________________________________________
+
+import requests
+from eth_abi import decode as abi_decode
+from sqlalchemy import text
+
+# This is the exact topic0 from your BscScan screenshot
+TOPIC0_TICKETSBOUGHT = "0xd30fc8f419840a5e9cc301144b85f6e0f8dcef82aa3a3fb58cc67c8cb8ae0c48"
+
+NODEREAL_API_KEY = cfg("NODEREAL_API_KEY", "")  # add this to Streamlit secrets
+NODEREAL_RPC = cfg("NODEREAL_BSC_RPC", "")      # optional override
+
+def nodereal_url() -> str:
+    if NODEREAL_RPC:
+        return NODEREAL_RPC
+    if not NODEREAL_API_KEY:
+        return ""
+    return f"https://bsc-mainnet.nodereal.io/v1/{NODEREAL_API_KEY}"
+
+def rpc_call(method: str, params: list, _id: int = 1):
+    url = nodereal_url()
+    if not url:
+        raise RuntimeError("NodeReal endpoint not configured (set NODEREAL_API_KEY or NODEREAL_BSC_RPC).")
+    r = requests.post(
+        url,
+        json={"jsonrpc": "2.0", "id": _id, "method": method, "params": params},
+        timeout=30,
+    )
+    r.raise_for_status()
+    j = r.json()
+    if "error" in j:
+        raise RuntimeError(j["error"])
+    return j["result"]
+
+def hex_to_int(x) -> int:
+    if x is None:
+        return 0
+    if isinstance(x, int):
+        return x
+    if isinstance(x, str) and x.startswith("0x"):
+        return int(x, 16)
+    return int(x)
+
+INSERT_SQL = text("""
+INSERT INTO tickets_bought
+(chain_id, contract_addr, buyer, round_id, qty, first_ticket_id, last_ticket_id,
+ tx_hash, log_index, block_number, created_at)
+VALUES
+(:chain_id, :contract_addr, :buyer, :round_id, :qty, :first_ticket_id, :last_ticket_id,
+ :tx_hash, :log_index, :block_number, :created_at)
+ON CONFLICT (tx_hash, log_index) DO NOTHING
+""")
+
+def sync_tx_to_neon(engine, tx_hash: str) -> dict:
+    txh = (tx_hash or "").strip().lower()
+    if not (txh.startswith("0x") and len(txh) == 66):
+        return {"ok": False, "error": "Bad tx hash"}
+
+    receipt = rpc_call("eth_getTransactionReceipt", [txh], _id=700)
+    if not receipt or not receipt.get("blockNumber"):
+        return {"ok": False, "error": "Receipt not found yet"}
+
+    blk_hex = receipt["blockNumber"]
+    blk = hex_to_int(blk_hex)
+
+    block = rpc_call("eth_getBlockByNumber", [blk_hex, False], _id=701)
+    ts_int = hex_to_int((block or {}).get("timestamp", "0x0"))
+    created_at = datetime.fromtimestamp(ts_int, tz=timezone.utc).isoformat() if ts_int else None
+
+    rows = []
+    for lg in receipt.get("logs", []) or []:
+        if (lg.get("address") or "").lower() != LOTTO_ADDR.lower():
+            continue
+        topics = lg.get("topics") or []
+        if not topics or str(topics[0]).lower() != TOPIC0_TICKETSBOUGHT:
+            continue
+
+        # indexed topics
+        round_id = hex_to_int(topics[1])
+        buyer_hex = "0x" + str(topics[2])[-40:]
+        buyer = Web3.to_checksum_address(buyer_hex).lower()
+
+        # data: qty, cost, firstTicketId, lastTicketId
+        data_hex = lg.get("data") or "0x"
+        data_bytes = bytes.fromhex(data_hex[2:])
+        qty, cost, first_id, last_id = abi_decode(
+            ["uint256", "uint256", "uint256", "uint256"],
+            data_bytes
+        )
+
+        log_index = hex_to_int(lg.get("logIndex", "0x0"))
+
+        rows.append({
+            "chain_id": int(CHAIN_ID),
+            "contract_addr": LOTTO_ADDR.lower(),
+            "buyer": buyer,
+            "round_id": int(round_id),
+            "qty": int(qty),
+            "first_ticket_id": int(first_id),
+            "last_ticket_id": int(last_id),
+            "tx_hash": txh,
+            "log_index": int(log_index),
+            "block_number": int(blk),
+            "created_at": created_at,
+        })
+
+    if not rows:
+        return {"ok": False, "error": "No TicketsBought event in this tx"}
+
+    with engine.begin() as conn:
+        conn.execute(INSERT_SQL, rows)
+
+    return {"ok": True, "inserted": len(rows), "buyer": rows[0]["buyer"], "round_id": rows[0]["round_id"]}
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state
 # ─────────────────────────────────────────────────────────────────────────────
@@ -398,6 +511,37 @@ def set_wallet_and_go(addr: str):
     st.session_state.active_tab = "dashboard"
     st.rerun()
 
+# Auto-sync if user comes from buy page (Option B)
+# ─────────────────────────────────────────────────────────────────────────────
+qp = st.query_params
+qp_wallet = (qp.get("wallet") or "").strip()
+qp_tx     = (qp.get("tx") or "").strip()
+qp_dash   = (qp.get("autodash") or "").strip()
+
+if qp_tx:
+    engine = get_engine()
+    if not engine:
+        st.warning("Neon DATABASE_URL not set, cannot sync purchase.")
+    else:
+        with st.spinner("Syncing your purchase from chain…"):
+            try:
+                res = sync_tx_to_neon(engine, qp_tx)
+            except Exception as e:
+                res = {"ok": False, "error": str(e)}
+
+        if res.get("ok"):
+            st.session_state.wallet = Web3.to_checksum_address(res["buyer"])
+            st.session_state.active_tab = "dashboard"
+
+            # Prevent resync on refresh
+            st.query_params.clear()
+
+            st.success(
+                f"Synced! Round {res.get('round_id')} · inserted {res.get('inserted')} row(s)."
+            )
+            st.rerun()
+        else:
+            st.error(f"Sync failed: {res.get('error')}")
 # ─────────────────────────────────────────────────────────────────────────────
 # Data
 # ─────────────────────────────────────────────────────────────────────────────
