@@ -924,8 +924,80 @@ else:
             )
 
     with c2:
-        st.markdown('#### <span class="yh" style="font-size:20px;">🧾 Recent Transfers</span>', unsafe_allow_html=True)
-        st.caption("Coming soon (optional on-chain transfer scan).")
+        st.markdown(
+            '#### <span class="yh" style="font-size:20px;">🧾 Recent Transfers</span>',
+            unsafe_allow_html=True
+        )
+        # st.caption("Auto-refreshes every 1 minute · Shows all purchases indexed into Neon")
+    
+        # ✅ Auto-refresh every 60s
+        # st.autorefresh(interval=60_000, key="recent_transfers_refresh")
+    
+        engine = get_engine()
+        if not engine:
+            st.caption("Database not configured.")
+        else:
+            # Use the current round id (for highlighting)
+            current_round_id = rsnap.get("round_id") if rsnap else None
+    
+            # Pull “all” (practically: last 500 for performance)
+            with engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT round_id, buyer, qty, first_ticket_id, last_ticket_id,
+                           tx_hash, block_number, created_at
+                    FROM tickets_bought
+                    ORDER BY created_at DESC
+                    LIMIT 500
+                """)).fetchall()
+    
+            if not rows:
+                st.caption("No transfers yet.")
+            else:
+                import pandas as pd
+    
+                df = pd.DataFrame(rows, columns=[
+                    "Round", "Buyer", "Qty", "First", "Last", "TxHash", "Block", "Time"
+                ])
+    
+                # Ticket range
+                df["Ticket Range"] = df["First"].astype(str) + " → " + df["Last"].astype(str)
+    
+                # Short buyer + tx (display only)
+                df["Buyer"] = df["Buyer"].apply(fmt_addr)
+                df["Tx"] = df["TxHash"].apply(lambda h: f"https://bscscan.com/tx/{h}")
+                df["TxHash"] = df["TxHash"].apply(lambda h: h[:10] + "…" + h[-8:])
+    
+                # Flag current round for highlight
+                df["★"] = df["Round"].apply(lambda r: "✅" if current_round_id is not None and int(r) == int(current_round_id) else "")
+    
+                # Order columns
+                df = df[["★", "Round", "Buyer", "Qty", "Ticket Range", "Tx", "TxHash", "Block", "Time"]]
+    
+                # Highlight rows for current round
+                def _hl_current_round(row):
+                    try:
+                        return ["background-color: rgba(98,193,229,.12)"] * len(row) if (
+                            current_round_id is not None and int(row["Round"]) == int(current_round_id)
+                        ) else [""] * len(row)
+                    except Exception:
+                        return [""] * len(row)
+    
+                styler = df.style.apply(_hl_current_round, axis=1)
+    
+                st.dataframe(
+                    styler,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Tx": st.column_config.LinkColumn(
+                            "Tx",
+                            help="Open on BscScan",
+                            display_text="🔗"
+                        ),
+                        "TxHash": st.column_config.TextColumn("Tx Hash"),
+                        "★": st.column_config.TextColumn("Current"),
+                    },
+                )
 
         
 
