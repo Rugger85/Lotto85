@@ -805,8 +805,6 @@ else:
     with c1:
         st.markdown('#### <span class="yh" style="font-size:20px;">🪙 Prize Structure</span>', unsafe_allow_html=True)
 
-        st.caption("Admin fee is taken first. Winners are paid from the remaining prize pool.")
-        st.plotly_chart(donut(ADMIN_SPLIT), use_container_width=True, config={"displayModeBar": False})
 
         st.write(f"**Admin Fee ({admin_pct:.0f}%)** — {admin_amt:,.2f} {sym}")
         st.write(f"**Prize Pool After Fee ({prize_pool_pct:.0f}%)** — {pot_after_fee:,.2f} {sym}")
@@ -822,6 +820,9 @@ else:
     with c2:
         st.markdown('#### <span class="yh" style="font-size:20px;">🧾 Recent Transfers</span>', unsafe_allow_html=True)
         st.caption("Coming soon (optional on-chain transfer scan).")
+
+        st.caption("Admin fee is taken first. Winners are paid from the remaining prize pool.")
+        st.plotly_chart(donut(ADMIN_SPLIT), use_container_width=True, config={"displayModeBar": False})
 
     with c3:
         st.markdown('#### <span class="yh" style="font-size:20px;">📈 Platform Stats</span>', unsafe_allow_html=True)
