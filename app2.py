@@ -860,11 +860,11 @@ else:
         st.caption("Admin fee is taken first. Winners are paid from the remaining prize pool.")
     
         # 👇 FIRST DONUT (Admin vs Pool)
-        st.plotly_chart(
-            donut(ADMIN_SPLIT),
-            use_container_width=True,
-            config={"displayModeBar": False}
-        )
+        # st.plotly_chart(
+        #     donut(ADMIN_SPLIT),
+        #     use_container_width=True,
+        #     config={"displayModeBar": False}
+        # )
     
         # 👇 SECOND DONUT (Winner distribution)
         st.plotly_chart(
