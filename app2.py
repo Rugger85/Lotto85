@@ -840,6 +840,42 @@ else:
     .pillbar .pool{  background: rgba(98,193,229,.18); }
     </style>
     """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <style>
+    .prize-line{
+      font-weight:700;
+      margin:6px 0;
+      letter-spacing:.3px;
+    }
+    
+    .prize-1{
+      font-size:22px;
+      color:#62c1e5;
+      text-shadow:0 0 12px rgba(98,193,229,.6);
+    }
+    
+    .prize-2{
+      font-size:19px;
+      color:rgba(98,193,229,.85);
+    }
+    
+    .prize-3{
+      font-size:17px;
+      color:rgba(98,193,229,.7);
+    }
+    
+    .prize-4{
+      font-size:15px;
+      color:rgba(98,193,229,.55);
+    }
+    
+    .prize-5, .prize-6{
+      font-size:14px;
+      color:rgba(98,193,229,.45);
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3, gap="large")
 
@@ -875,9 +911,17 @@ else:
         # )
     
         # 👇 Optional: show payout amounts under winner donut
-        for lbl, pct in WINNER_SPLIT.items():
+        for i, (lbl, pct) in enumerate(WINNER_SPLIT.items(), start=1):
             amt = pot_after_fee * (pct / 100.0)
-            st.write(f"**{lbl}** — {amt:,.2f} {sym}")
+        
+            st.markdown(
+                f"""
+                <div class="prize-line prize-{i}">
+                    {lbl} — {amt:,.2f} {sym}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
     with c2:
         st.markdown('#### <span class="yh" style="font-size:20px;">🧾 Recent Transfers</span>', unsafe_allow_html=True)
