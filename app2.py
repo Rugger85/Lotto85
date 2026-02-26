@@ -262,18 +262,31 @@ def ts_short(t: int | None) -> str:
 def state_lbl(s: int) -> str:
     return {0: "🟢 Open", 1: "🔒 Sales Closed", 2: "🎉 Drawn"}.get(int(s), f"State {s}")
 
-def donut(data: dict[str, int]) -> go.Figure:
-    labels = list(data.keys())
-    values = list(data.values())
+import plotly.graph_objects as go
+
+def donut(split: dict[str, float], hole: float = 0.68):
+    labels = [f"{k} {v:.0f}%" for k, v in split.items()]  # e.g. "1st 40%"
+    values = list(split.values())
+
     fig = go.Figure(
-        data=[go.Pie(labels=labels, values=values, hole=0.62, sort=False)]
+        go.Pie(
+            labels=labels,
+            values=values,
+            hole=hole,
+            sort=False,
+            direction="clockwise",
+            textposition="inside",
+            texttemplate="%{label}",          # ONLY label text (already includes %)
+            textfont=dict(size=12),
+            hovertemplate="%{label}<extra></extra>",
+            showlegend=False
+        )
     )
+
     fig.update_layout(
-        margin=dict(l=10, r=10, t=10, b=10),
+        margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
-        height=280,
     )
     return fig
 
@@ -802,19 +815,66 @@ else:
 
     c1, c2, c3 = st.columns(3, gap="large")
 
+    st.markdown("""
+    <style>
+    .pillbar{
+      width:100%;
+      display:flex;
+      border-radius:999px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.06);
+    }
+    .pillbar .seg{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:8px 10px;
+      font-weight:700;
+      font-size:14px;
+      letter-spacing:.2px;
+      color: rgba(255,255,255,.92);
+      white-space:nowrap;
+    }
+    .pillbar .admin{ background: rgba(98,193,229,.35); }
+    .pillbar .pool{  background: rgba(98,193,229,.18); }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    c1, c2, c3 = st.columns(3, gap="large")
+
     with c1:
         st.markdown('#### <span class="yh" style="font-size:20px;">🪙 Prize Structure</span>', unsafe_allow_html=True)
-
+    
+        # Pill Bar
+        st.markdown(
+            f"""
+            <div class="pillbar">
+              <div class="seg admin" style="width:{admin_pct}%;">Admin {admin_pct:.0f}%</div>
+              <div class="seg pool"  style="width:{prize_pool_pct}%;">Pool Size {prize_pool_pct:.0f}%</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    
         st.caption("Admin fee is taken first. Winners are paid from the remaining prize pool.")
-        st.plotly_chart(donut(ADMIN_SPLIT), use_container_width=True, config={"displayModeBar": False})
-        st.write(f"**Admin Fee ({admin_pct:.0f}%)** — {admin_amt:,.2f} {sym}")
-        st.write(f"**Prize Pool After Fee ({prize_pool_pct:.0f}%)** — {pot_after_fee:,.2f} {sym}")
-
-        st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
-        st.plotly_chart(donut(WINNER_SPLIT), use_container_width=True, config={"displayModeBar": False})
-
-        # Show real payouts based on pot_after_fee
-        for i, (lbl, pct) in enumerate(WINNER_SPLIT.items()):
+    
+        # 👇 FIRST DONUT (Admin vs Pool)
+        st.plotly_chart(
+            donut(ADMIN_SPLIT),
+            use_container_width=True,
+            config={"displayModeBar": False}
+        )
+    
+        # 👇 SECOND DONUT (Winner distribution)
+        st.plotly_chart(
+            donut(WINNER_SPLIT),
+            use_container_width=True,
+            config={"displayModeBar": False}
+        )
+    
+        # 👇 Optional: show payout amounts under winner donut
+        for lbl, pct in WINNER_SPLIT.items():
             amt = pot_after_fee * (pct / 100.0)
             st.write(f"**{lbl}** — {amt:,.2f} {sym}")
 
