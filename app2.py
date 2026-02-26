@@ -857,7 +857,7 @@ else:
             unsafe_allow_html=True
         )
     
-        st.caption("Admin fee is taken first. Winners are paid from the remaining prize pool.")
+        # st.caption("Admin fee is taken first. Winners are paid from the remaining prize pool.")
     
         # 👇 FIRST DONUT (Admin vs Pool)
         # st.plotly_chart(
@@ -867,11 +867,11 @@ else:
         # )
     
         # 👇 SECOND DONUT (Winner distribution)
-        st.plotly_chart(
-            donut(WINNER_SPLIT),
-            use_container_width=True,
-            config={"displayModeBar": False}
-        )
+        # st.plotly_chart(
+        #     donut(WINNER_SPLIT),
+        #     use_container_width=True,
+        #     config={"displayModeBar": False}
+        # )
     
         # 👇 Optional: show payout amounts under winner donut
         for lbl, pct in WINNER_SPLIT.items():
