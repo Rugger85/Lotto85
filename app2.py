@@ -932,6 +932,7 @@ else:
     
         # ✅ Auto-refresh every 60s
         # st.autorefresh(interval=60_000, key="recent_transfers_refresh")
+        # st.autorefresh(interval=28_800_000, key="recent_transfers_refresh")
     
         engine = get_engine()
         if not engine:
