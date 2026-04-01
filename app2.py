@@ -945,16 +945,22 @@ else:
         else:
             # Use the current round id (for highlighting)
             current_round_id = rsnap.get("round_id") if rsnap else None
-    
-            # Pull “all” (practically: last 500 for performance)
+
             with engine.connect() as conn:
                 rows = conn.execute(text("""
                     SELECT round_id, buyer, qty, first_ticket_id, last_ticket_id,
                            tx_hash, block_number, created_at
                     FROM tickets_bought
+                    WHERE chain_id = :chain_id
+                      AND contract_addr = :contract
+                      AND round_id = :round_id
                     ORDER BY created_at DESC
                     LIMIT 500
-                """)).fetchall()
+                """), {
+                    "chain_id": int(CHAIN_ID),
+                    "contract": LOTTO_ADDR.lower(),
+                    "round_id": int(current_round_id or 0),
+                }).fetchall()
     
             if not rows:
                 st.caption("No transfers yet.")
