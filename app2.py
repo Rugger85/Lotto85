@@ -328,7 +328,7 @@ def get_round_snap():
 
         dec = int(safe(lambda: usdt_c.functions.decimals().call(), 18))
         sym = safe(lambda: usdt_c.functions.symbol().call(), "USDT")
-        price_str = f"{tp_units / 10**dec:,.4f} {sym}"
+        price_str = f"{tp_units / 10**dec:,.1f} {sym}"
 
         return dict(
             round_id=rid,
