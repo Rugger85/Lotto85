@@ -6,86 +6,146 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root { --accent:#62c1e5; }
-    body { font-family: system-ui, Arial; background:#06080d; color:#e9eef7; margin:0; padding:24px; }
-    .card { max-width:620px; margin:0 auto; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:18px; }
-    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .muted { opacity:.75; font-size:12px; line-height:1.45; }
+    body {
+      font-family: system-ui, Arial, sans-serif;
+      background:#06080d;
+      color:#e9eef7;
+      margin:0;
+      padding:24px;
+    }
+    .card {
+      max-width:700px;
+      margin:0 auto;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:16px;
+      padding:18px;
+      box-shadow:0 20px 55px rgba(0,0,0,.35);
+    }
+    .row {
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .muted {
+      opacity:.78;
+      font-size:13px;
+      line-height:1.5;
+    }
     .ok { color:var(--accent); font-weight:900; }
     .err { color:#ff6b6b; font-weight:900; }
-    a { color:var(--accent); }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
     button {
-      padding:12px 14px; border-radius:12px; border:1px solid rgba(98,193,229,.6);
-      background:rgba(98,193,229,.18); color:#fff; font-weight:900; cursor:pointer;
+      padding:12px 14px;
+      border-radius:12px;
+      border:1px solid rgba(98,193,229,.6);
+      background:rgba(98,193,229,.18);
+      color:#fff;
+      font-weight:900;
+      cursor:pointer;
     }
     button:hover { background:rgba(98,193,229,.26); }
     button:disabled { opacity:.5; cursor:not-allowed; }
     input {
-      width:160px; padding:12px 14px; border-radius:12px;
-      border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.25);
-      color:#e9eef7; font-weight:800;
+      width:180px;
+      padding:12px 14px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.18);
+      background:rgba(0,0,0,.25);
+      color:#e9eef7;
+      font-weight:800;
+      font-size:16px;
     }
     .box {
-      margin-top:12px; padding:12px 14px; border-radius:12px;
-      border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.22);
+      margin-top:12px;
+      padding:12px 14px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.22);
     }
     code { color:var(--accent); word-break:break-all; }
+    .kv {
+      margin-top:8px;
+      font-size:14px;
+      line-height:1.7;
+    }
+    .title {
+      margin:0 0 6px 0;
+      font-size:38px;
+      font-weight:1000;
+      line-height:1.05;
+    }
+    .accent { color:var(--accent); }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 </head>
 <body>
   <div class="card">
-    <h2 style="margin:0 0 6px 0;">LOTTO — Buy Tickets</h2>
+    <h2 class="title">LOTTO<span class="accent">85</span> — Buy Tickets</h2>
+
     <div class="muted">
-      This page connects MetaMask directly (top-level page). It will:
-      <b>switch to BSC</b> (if needed), <b>approve USDT</b>, then <b>buyTickets(qty)</b>.
-      After the purchase confirms, it will <b>redirect to your Streamlit dashboard</b> and sync the tx.
+      This page connects MetaMask directly. It will
+      <b>switch to BSC</b> (if needed), <b>approve USDT</b>, then
+      <b>buyTickets(qty)</b>. After confirmation, it redirects to your Streamlit dashboard.
     </div>
 
     <div class="box">
-      <div class="row">
+      <div class="kv">
+        Current ticket price: <span id="ticketPrice" class="ok">Loading…</span><br/>
+        Round status: <span id="roundStatus" class="ok">Loading…</span><br/>
+        Tickets sold: <span id="ticketsSold" class="ok">Loading…</span>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
         <div class="muted">Tickets:</div>
-        <input id="qty" type="number" min="1" max="100" value="1" />
+        <input id="qty" type="number" min="1" max="50" value="1" />
         <button id="btnConnect">🦊 Connect MetaMask</button>
         <button id="btnBuy" disabled>🟡 Approve + Buy</button>
       </div>
+
       <div id="status" class="muted" style="margin-top:10px;"></div>
       <div id="tx" class="muted" style="margin-top:10px;"></div>
     </div>
 
-    <div class="muted" style="margin-top:12px;">
+    <div class="muted" style="margin-top:14px;">
       Contract: <code id="lottoAddr"></code><br/>
       USDT: <code id="usdtAddr"></code><br/>
-      Dashboard: <code id="dashUrl"></code>
+      Dashboard: <a id="dashLink" target="_blank" rel="noopener noreferrer"></a>
     </div>
   </div>
 
 <script>
-// 👉 Set these to your deployed addresses
-const USDT  = "0x55d398326f99059fF775485246999027B3197955";
+const DASHBOARD_URL = "https://lotto85.streamlit.app";
+const USDT = "0x55d398326f99059fF775485246999027B3197955";
 const LOTTO = "0xEF172F7f02ce222b3AEe18700A5B4A06019d6d0d";
 
-// ✅ Your Streamlit Cloud app
-const STREAMLIT_APP = "https://lotto85.streamlit.app";
-
-// Minimal ABIs
 const USDT_ABI = [
   "function approve(address spender, uint256 amount) returns (bool)",
   "function allowance(address owner, address spender) view returns (uint256)",
-  "function decimals() view returns (uint8)"
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)"
 ];
+
 const LOTTO_ABI = [
-  "function ticketPrice() view returns (uint256)",
+  "function currentRound() view returns (uint8,uint256,uint256,uint256,uint256,uint256,bytes32,bool)",
   "function buyTickets(uint256 qty) external"
 ];
 
 document.getElementById("lottoAddr").textContent = LOTTO;
 document.getElementById("usdtAddr").textContent = USDT;
-document.getElementById("dashUrl").textContent = STREAMLIT_APP;
+document.getElementById("dashLink").textContent = DASHBOARD_URL;
+document.getElementById("dashLink").href = DASHBOARD_URL;
 
 let provider, signer, me;
 
 const elStatus = document.getElementById("status");
 const elTx = document.getElementById("tx");
+const elPrice = document.getElementById("ticketPrice");
+const elRoundStatus = document.getElementById("roundStatus");
+const elTicketsSold = document.getElementById("ticketsSold");
+
 const btnConnect = document.getElementById("btnConnect");
 const btnBuy = document.getElementById("btnBuy");
 const qtyInput = document.getElementById("qty");
@@ -93,32 +153,74 @@ const qtyInput = document.getElementById("qty");
 function setStatus(html) { elStatus.innerHTML = html; }
 function setTx(html) { elTx.innerHTML = html; }
 
-function fmt(a){
+function fmtAddr(a){
   if(!a) return "";
   return a.slice(0,6) + "…" + a.slice(-4);
 }
 
+function stateLabel(s) {
+  if (Number(s) === 0) return "🟢 Open";
+  if (Number(s) === 1) return "🔒 Sales Closed";
+  if (Number(s) === 2) return "🎉 Drawn";
+  if (Number(s) === 3) return "❌ Cancelled";
+  return `State ${s}`;
+}
+
 async function ensureBSC() {
-  // BSC mainnet chainId = 56 = 0x38
+  const targetChainId = "0x38";
   try {
     const chainId = await window.ethereum.request({ method: "eth_chainId" });
-    if (chainId !== "0x38") {
+    if (chainId !== targetChainId) {
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0x38" }]
+        params: [{ chainId: targetChainId }]
       });
     }
-  } catch(e) {
-    // if user rejects, tx may fail if wrong chain
+  } catch (e) {
+    throw new Error("Please switch MetaMask to BNB Smart Chain Mainnet.");
+  }
+}
+
+async function loadRoundInfo() {
+  try {
+    if (!window.ethereum) {
+      elPrice.textContent = "MetaMask not detected";
+      elRoundStatus.textContent = "—";
+      elTicketsSold.textContent = "—";
+      return;
+    }
+
+    const tempProvider = new ethers.providers.Web3Provider(window.ethereum);
+    const lotto = new ethers.Contract(LOTTO, LOTTO_ABI, tempProvider);
+    const usdt = new ethers.Contract(USDT, USDT_ABI, tempProvider);
+
+    const round = await lotto.currentRound();
+    const decimals = await usdt.decimals();
+    const symbol = await usdt.symbol();
+
+    const state = Number(round[0]);
+    const ticketPriceRaw = round[3];
+    const ticketsSold = Number(round[4]);
+
+    const priceFormatted = ethers.utils.formatUnits(ticketPriceRaw, decimals);
+
+    elPrice.textContent = `${priceFormatted} ${symbol}`;
+    elRoundStatus.textContent = stateLabel(state);
+    elTicketsSold.textContent = String(ticketsSold);
+  } catch (e) {
+    elPrice.textContent = "Failed to load";
+    elRoundStatus.textContent = "Failed to load";
+    elTicketsSold.textContent = "Failed to load";
   }
 }
 
 btnConnect.onclick = async () => {
   try {
     if (!window.ethereum) {
-      setStatus('<span class="err">MetaMask not detected.</span> Install/enable the extension and reload.');
+      setStatus('<span class="err">MetaMask not detected.</span> Install/enable it and reload.');
       return;
     }
+
     provider = new ethers.providers.Web3Provider(window.ethereum);
     await provider.send("eth_requestAccounts", []);
     await ensureBSC();
@@ -126,8 +228,10 @@ btnConnect.onclick = async () => {
     signer = provider.getSigner();
     me = await signer.getAddress();
 
-    setStatus(`Connected: <span class="ok">${fmt(me)}</span>`);
+    setStatus(`Connected: <span class="ok">${fmtAddr(me)}</span>`);
     btnBuy.disabled = false;
+
+    await loadRoundInfo();
   } catch (e) {
     setStatus(`<span class="err">Connect failed:</span> ${e.message || e}`);
   }
@@ -139,48 +243,76 @@ btnBuy.onclick = async () => {
     setTx("Preparing…");
 
     const qty = parseInt(qtyInput.value || "1", 10);
-    if (!qty || qty < 1 || qty > 100) throw new Error("Invalid qty (1–100)");
+    if (!qty || qty < 1 || qty > 50) {
+      throw new Error("Invalid qty (1–50)");
+    }
 
-    if (!signer) throw new Error("Not connected. Click Connect MetaMask first.");
+    if (!signer) {
+      throw new Error("Not connected. Click Connect MetaMask first.");
+    }
+
+    await ensureBSC();
 
     const usdt = new ethers.Contract(USDT, USDT_ABI, signer);
     const lotto = new ethers.Contract(LOTTO, LOTTO_ABI, signer);
 
-    // Force correct chain before sending tx
-    await ensureBSC();
+    const round = await lotto.currentRound();
+    const state = Number(round[0]);
+    const price = round[3];
 
-    const price = await lotto.ticketPrice();     // token units
+    if (state !== 0) {
+      throw new Error("Round is not open for purchases.");
+    }
+
     const total = price.mul(qty);
 
     const allowance = await usdt.allowance(me, LOTTO);
     if (allowance.lt(total)) {
-      setTx("Approving USDT… (MetaMask popup)");
+      setTx("Approving USDT… (confirm in MetaMask)");
       const tx1 = await usdt.approve(LOTTO, total);
-      setTx(`Approval sent: <a target="_blank" href="https://bscscan.com/tx/${tx1.hash}">${tx1.hash.slice(0,12)}…</a><br/>Waiting confirmation…`);
+      setTx(`Approval sent: <a target="_blank" href="https://bscscan.com/tx/${tx1.hash}">${tx1.hash.slice(0,12)}…</a>`);
       await tx1.wait();
     }
 
-    setTx("Buying tickets… (MetaMask popup)");
+    setTx("Buying tickets… (confirm in MetaMask)");
     const tx2 = await lotto.buyTickets(qty);
-    setTx(`Buy sent: <a target="_blank" href="https://bscscan.com/tx/${tx2.hash}">${tx2.hash.slice(0,12)}…</a><br/>Waiting confirmation…`);
+    setTx(`Purchase sent: <a target="_blank" href="https://bscscan.com/tx/${tx2.hash}">${tx2.hash.slice(0,12)}…</a>`);
     await tx2.wait();
 
-    // ✅ Redirect to Streamlit and let Streamlit sync this tx into Neon
-    const dashUrl =
-      `${STREAMLIT_APP}/?wallet=${encodeURIComponent(me)}&tx=${encodeURIComponent(tx2.hash)}&autodash=1`;
+    setTx(`✅ Purchased successfully. Tx: <a target="_blank" href="https://bscscan.com/tx/${tx2.hash}">${tx2.hash}</a>`);
 
-    setTx(
-      `✅ Purchased. Redirecting to Dashboard to sync…<br/>
-       Tx: <a target="_blank" href="https://bscscan.com/tx/${tx2.hash}">${tx2.hash.slice(0,12)}…</a>`
-    );
-
-    setTimeout(() => { window.location.href = dashUrl; }, 1200);
+    const redirectUrl = `${DASHBOARD_URL}/?tx=${encodeURIComponent(tx2.hash)}&autodash=1`;
+    setStatus(`<span class="ok">Redirecting to dashboard…</span>`);
+    setTimeout(() => {
+      window.location.href = redirectUrl;
+    }, 1800);
 
   } catch (e) {
     setTx(`<span class="err">Failed:</span> ${e.message || e}`);
+  } finally {
     btnBuy.disabled = false;
   }
 };
+
+if (window.ethereum) {
+  window.ethereum.on("accountsChanged", async () => {
+    btnBuy.disabled = true;
+    me = null;
+    setStatus("Wallet changed. Reconnect MetaMask.");
+    setTx("");
+    await loadRoundInfo();
+  });
+
+  window.ethereum.on("chainChanged", async () => {
+    btnBuy.disabled = true;
+    me = null;
+    setStatus("Network changed. Reconnect MetaMask.");
+    setTx("");
+    await loadRoundInfo();
+  });
+}
+
+loadRoundInfo();
 </script>
 </body>
 </html>
