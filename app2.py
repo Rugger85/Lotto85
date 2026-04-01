@@ -319,20 +319,25 @@ def get_round_snap():
     try:
         rid = int(lotto_c.functions.roundId().call())
         cr  = lotto_c.functions.currentRound().call()
+
         state    = int(cr[0]) if len(cr) > 0 else 0
         draw_ts  = int(cr[1]) if len(cr) > 1 else 0
         close_ts = int(cr[2]) if len(cr) > 2 else 0
-        sold     = int(cr[3]) if len(cr) > 3 else 0
+        tp_units = int(cr[3]) if len(cr) > 3 else 0   # ticketPrice
+        sold     = int(cr[4]) if len(cr) > 4 else 0   # ticketsSold
 
         dec = int(safe(lambda: usdt_c.functions.decimals().call(), 18))
         sym = safe(lambda: usdt_c.functions.symbol().call(), "USDT")
-        tp_units = safe(lambda: int(lotto_c.functions.ticketPrice().call()), 0)
-        price_str = f"{(tp_units or 0) / 10**dec:,.4f} {sym}" if tp_units is not None else "N/A"
+        price_str = f"{tp_units / 10**dec:,.4f} {sym}"
 
         return dict(
-            round_id=rid, state=state, sold=sold,
-            draw_ts=draw_ts, close_ts=close_ts,
-            draw_str=ts(draw_ts), close_str=ts(close_ts),
+            round_id=rid,
+            state=state,
+            sold=sold,
+            draw_ts=draw_ts,
+            close_ts=close_ts,
+            draw_str=ts(draw_ts),
+            close_str=ts(close_ts),
             draw_short=ts_short(draw_ts),
             price_str=price_str
         )
