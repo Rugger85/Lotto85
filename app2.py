@@ -20,18 +20,14 @@ st.set_page_config(page_title="LOTTO85", layout="wide", page_icon="⚡")
 import streamlit.components.v1 as components
 
 components.html(
-    """
-    <script>
-    setInterval(() => {
-        fetch(window.location.href, {
-            method: "GET",
-            cache: "no-store",
-            mode: "no-cors"
-        }).catch(() => {});
-    }, 240000);
-    </script>
-    """,
-    height=0,
+"""
+<script>
+setInterval(() => {
+   window.location.reload();
+}, 3600000); // 1 hour
+</script>
+""",
+height=0
 )
 # ─────────────────────────────────────────────────────────────────────────────
 # Global CSS
