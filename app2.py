@@ -19,15 +19,17 @@ st.set_page_config(page_title="LOTTO85", layout="wide", page_icon="⚡")
 
 import streamlit.components.v1 as components
 
+# Keep browser session alive without full page reload
 components.html(
-"""
-<script>
-setInterval(() => {
-   window.location.reload();
-}, 3600000); // 1 hour
-</script>
-""",
-height=0
+    """
+    <script>
+    setInterval(() => {
+        fetch(window.location.href, { cache: "no-store" })
+            .catch(() => {});
+    }, 60000); // ping every 60 seconds
+    </script>
+    """,
+    height=0,
 )
 # ─────────────────────────────────────────────────────────────────────────────
 # Global CSS
@@ -310,7 +312,7 @@ def valid_wallet(s: str) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 # Cached chain snapshots
 # ─────────────────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=60)
 def get_snap():
     dec = int(safe(lambda: usdt_c.functions.decimals().call(), 18))
     sym = safe(lambda: usdt_c.functions.symbol().call(), "USDT")
@@ -327,7 +329,7 @@ def get_snap():
         c_bnb=bnb(c_bnb), a_bnb=bnb(a_bnb),
     )
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=60)
 def get_round_snap():
     try:
         rid = int(lotto_c.functions.roundId().call())
