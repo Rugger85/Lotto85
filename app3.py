@@ -656,6 +656,52 @@ def get_draw_revealed_for_round(round_id: int, dec: int, lookback_blocks: int = 
         return None
 
 
+@st.cache_data(ttl=45)
+def get_last_winners(dec: int):
+    raw = safe(lambda: raw_contract_call("getLastWinners()"), b"")
+    if not raw:
+        return None
+
+    try:
+        (
+            last_round_id,
+            pot_after_fee_raw,
+            admin_fee_raw,
+            ticket_ids,
+            winners,
+            amounts_raw,
+            emergency_path,
+        ) = abi_decode(
+            ["uint256", "uint256", "uint256", "uint256[6]", "address[6]", "uint256[6]", "bool"],
+            bytes(raw),
+        )
+    except Exception:
+        return None
+
+    winners_out = []
+    for idx, (ticket_id, winner, amount_raw) in enumerate(zip(ticket_ids, winners, amounts_raw), start=1):
+        if int(amount_raw) <= 0:
+            continue
+        winners_out.append({
+            "round_id": int(last_round_id),
+            "ticket_id": int(ticket_id),
+            "winner": Web3.to_checksum_address(winner),
+            "amount": tok(int(amount_raw), int(dec)),
+            "pct": 0,
+            "tx_hash": "",
+            "block": 0,
+            "log_index": idx,
+        })
+
+    return {
+        "round_id": int(last_round_id),
+        "pot_after_fee": tok(int(pot_after_fee_raw), int(dec)),
+        "admin_fee": tok(int(admin_fee_raw), int(dec)),
+        "emergency": bool(emergency_path),
+        "winners": winners_out,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Session + query params
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1020,9 +1066,28 @@ winner_events = get_winner_events_for_round(
     int(snap["dec"]),
     lookback_blocks=EVENT_LOOKBACK_BLOCKS,
 )
+last_winners = get_last_winners(int(snap["dec"]))
+if not winner_events and last_winners and int(last_winners["round_id"]) == int(result_round):
+    fallback_pct = get_prize_config()[1]
+    winner_events = []
+    for idx, ev in enumerate(last_winners["winners"]):
+        ev = dict(ev)
+        ev["pct"] = int(fallback_pct[idx]) if idx < len(fallback_pct) else 0
+        winner_events.append(ev)
+    if not draw_meta:
+        draw_meta = {
+            "pot_after_fee": last_winners["pot_after_fee"],
+            "admin_fee": last_winners["admin_fee"],
+            "emergency": last_winners["emergency"],
+            "tx_hash": "",
+            "block": 0,
+        }
 
 if not winner_events:
-    st.info("No WinnerPaid events found for this round yet. Results will appear after revealAndDraw executes.")
+    msg = "No WinnerPaid events found for this round yet."
+    if last_winners:
+        msg += f" The contract's stored last result is Round {int(last_winners['round_id'])}."
+    st.info(msg)
 else:
     if draw_meta:
         dm1, dm2, dm3, dm4 = st.columns(4)
@@ -1033,7 +1098,10 @@ else:
         with dm3:
             st.metric("Draw Path", "Emergency" if draw_meta["emergency"] else "Normal")
         with dm4:
-            st.link_button("View Draw Tx", f"https://bscscan.com/tx/{draw_meta['tx_hash']}")
+            if draw_meta.get("tx_hash"):
+                st.link_button("View Draw Tx", f"https://bscscan.com/tx/{draw_meta['tx_hash']}")
+            else:
+                st.metric("Source", "Stored result")
 
     for idx, ev in enumerate(winner_events, start=1):
         st.markdown(
@@ -1041,7 +1109,7 @@ else:
 <div class="winner-card">
   <div class="winner-rank">Winner #{idx} · Ticket #{ev['ticket_id']} · {ev['pct']}%</div>
   <div class="winner-amt">{ev['amount']:,.4f} {sym}</div>
-  <div class="winner-meta">Wallet: <b>{fmt_addr(ev['winner'])}</b> · Block: {ev['block']:,} · <a href="https://bscscan.com/tx/{ev['tx_hash']}" target="_blank">View transaction</a></div>
+  <div class="winner-meta">Wallet: <b>{fmt_addr(ev['winner'])}</b>{f' · Block: {ev["block"]:,} · <a href="https://bscscan.com/tx/{ev["tx_hash"]}" target="_blank">View transaction</a>' if ev.get("tx_hash") else ' · Stored result'}</div>
 </div>
 """,
             unsafe_allow_html=True,
@@ -1053,7 +1121,7 @@ else:
         "Winner": fmt_addr(ev["winner"]),
         "Amount": f"{ev['amount']:,.4f} {sym}",
         "Pct": f"{ev['pct']}%",
-        "Tx": f"https://bscscan.com/tx/{ev['tx_hash']}",
+        "Tx": f"https://bscscan.com/tx/{ev['tx_hash']}" if ev.get("tx_hash") else "",
     } for i, ev in enumerate(winner_events, start=1)])
 
     st.dataframe(
