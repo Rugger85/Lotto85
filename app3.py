@@ -1047,10 +1047,10 @@ st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Winner display
 st.subheader("🏆 Frontend Winner Display")
-default_result_round = max(0, round_id - 1) if state == 0 else round_id
+default_result_round = max(1, round_id - 1) if state == 0 else round_id
 result_round = st.number_input(
     "Round to show results for",
-    min_value=0,
+    min_value=1,
     value=int(default_result_round),
     step=1,
     help="Current round is open, so default is previous completed round.",
