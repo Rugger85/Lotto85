@@ -1,10 +1,12 @@
-streamlit==1.36.0
-web3==6.20.2
 python-dotenv==1.0.1
-plotly==5.23.0
 requests==2.32.3
-
 SQLAlchemy==2.0.32
 psycopg[binary]==3.2.13
-
 streamlit-javascript==0.1.5
+streamlit==1.56.0
+pillow>=12.2.0,<13
+pandas>=2.3,<4
+plotly>=6.0,<7
+web3>=7.13,<8
+eth-abi>=5.2,<6
+
