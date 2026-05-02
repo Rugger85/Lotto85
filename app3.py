@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
 from web3 import Web3
 from eth_abi import decode as abi_decode
 from sqlalchemy import create_engine, text
@@ -19,18 +18,6 @@ from sqlalchemy.engine import Engine
 # Page setup
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="LOTTO85", layout="wide", page_icon="⚡")
-
-# Lightweight keep-alive ping: does not reload the full app
-components.html(
-    """
-    <script>
-      setInterval(() => {
-        fetch(window.location.href, { cache: "no-store" }).catch(() => {});
-      }, 60000);
-    </script>
-    """,
-    height=0,
-)
 
 ACCENT = "#62c1e5"
 
@@ -239,6 +226,50 @@ def pct(num: float, den: float) -> float:
     return (float(num) / float(den) * 100.0) if float(den or 0) > 0 else 0.0
 
 
+def abi_uint(v, default: int = 0) -> int:
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, int):
+        return v
+    if isinstance(v, (bytes, bytearray)):
+        return int.from_bytes(v, "big")
+    if hasattr(v, "hex") and not isinstance(v, str):
+        return int.from_bytes(bytes(v), "big")
+    if isinstance(v, str):
+        s = v.strip()
+        return int(s, 16) if s.startswith("0x") else int(s)
+    return default
+
+
+def abi_bytes32_hex(v) -> str:
+    if isinstance(v, str):
+        return v if v.startswith("0x") else "0x" + v
+    if isinstance(v, (bytes, bytearray)) or hasattr(v, "hex"):
+        h = v.hex()
+        return h if h.startswith("0x") else "0x" + h
+    return "0x"
+
+
+def raw_contract_call(signature: str):
+    selector = Web3.keccak(text=signature)[:4]
+    return w3.eth.call({"to": LOTTO_ADDR, "data": "0x" + selector.hex()})
+
+
+def decode_current_round():
+    raw = safe(lambda: raw_contract_call("currentRound()"), b"")
+    if raw:
+        data = bytes(raw)
+        for types in (
+            ["uint8", "uint256", "uint256", "uint256", "uint256", "uint256", "bytes32", "bool"],
+            ["uint8", "uint256", "uint256", "uint256", "uint256", "bytes32", "bool"],
+        ):
+            try:
+                return abi_decode(types, data)
+            except Exception:
+                pass
+    return safe(lambda: lotto_c.functions.currentRound().call(), None)
+
+
 def topic_uint256(n: int) -> str:
     return "0x" + int(n).to_bytes(32, "big").hex()
 
@@ -293,7 +324,7 @@ def get_snap():
 @st.cache_data(ttl=30)
 def get_round_snap():
     rid = int(safe(lambda: lotto_c.functions.roundId().call(), 0))
-    cr = safe(lambda: lotto_c.functions.currentRound().call(), None)
+    cr = decode_current_round()
 
     if not cr:
         return {
@@ -314,16 +345,19 @@ def get_round_snap():
     dec = int(safe(lambda: usdt_c.functions.decimals().call(), 18))
     sym = safe(lambda: usdt_c.functions.symbol().call(), "USDT")
 
-    state = int(cr[0])
-    draw_ts = int(cr[1])
-    close_ts = int(cr[2])
-    ticket_price_units = int(cr[3])
-    sold = int(cr[4])
-    start_ticket_id = int(cr[5]) if len(cr) > 5 else 0
-    commit_hash = cr[6].hex() if hasattr(cr[6], "hex") else str(cr[6])
-    if not commit_hash.startswith("0x"):
-        commit_hash = "0x" + commit_hash
-    emergency = bool(cr[7]) if len(cr) > 7 else False
+    state = abi_uint(cr[0])
+    draw_ts = abi_uint(cr[1])
+    close_ts = abi_uint(cr[2])
+    ticket_price_units = abi_uint(cr[3])
+    sold = abi_uint(cr[4])
+    if len(cr) >= 8:
+        start_ticket_id = abi_uint(cr[5])
+        commit_hash = abi_bytes32_hex(cr[6])
+        emergency = bool(cr[7])
+    else:
+        start_ticket_id = 0
+        commit_hash = abi_bytes32_hex(cr[5]) if len(cr) > 5 else "0x"
+        emergency = bool(cr[6]) if len(cr) > 6 else False
 
     return {
         "round_id": rid,
