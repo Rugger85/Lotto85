@@ -142,6 +142,7 @@ ABI_PATH = cfg("LOTTO_ABI_PATH", "lotto_abi.json")
 DATABASE_URL = cfg("DATABASE_URL", cfg("NEON_DSN", ""))
 BUY_DAPP_URL = cfg("BUY_DAPP_URL", "https://rugger85.github.io/Lotto85/wallet_buy.html")
 MAX_TICKETS_PER_WALLET = int(cfg("MAX_TICKETS_PER_WALLET", "50"))
+EVENT_LOOKBACK_BLOCKS = int(cfg("EVENT_LOOKBACK_BLOCKS", "1500000"))
 
 missing = [k for k, v in {
     "BSC_RPC": BSC_RPC,
@@ -1000,17 +1001,25 @@ st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Winner display
 st.subheader("🏆 Frontend Winner Display")
-default_result_round = max(1, round_id - 1) if state == 0 else round_id
+default_result_round = max(0, round_id - 1) if state == 0 else round_id
 result_round = st.number_input(
     "Round to show results for",
-    min_value=1,
+    min_value=0,
     value=int(default_result_round),
     step=1,
     help="Current round is open, so default is previous completed round.",
 )
 
-draw_meta = get_draw_revealed_for_round(int(result_round), int(snap["dec"]))
-winner_events = get_winner_events_for_round(int(result_round), int(snap["dec"]))
+draw_meta = get_draw_revealed_for_round(
+    int(result_round),
+    int(snap["dec"]),
+    lookback_blocks=EVENT_LOOKBACK_BLOCKS,
+)
+winner_events = get_winner_events_for_round(
+    int(result_round),
+    int(snap["dec"]),
+    lookback_blocks=EVENT_LOOKBACK_BLOCKS,
+)
 
 if not winner_events:
     st.info("No WinnerPaid events found for this round yet. Results will appear after revealAndDraw executes.")
