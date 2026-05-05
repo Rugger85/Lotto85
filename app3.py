@@ -7,7 +7,6 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 from web3 import Web3
 from eth_abi import decode as abi_decode
@@ -463,6 +462,27 @@ def db_get_round_leaderboard(engine: Engine, round_id: int, limit: int = 100):
             "round_id": int(round_id),
             "limit": int(limit),
         }).fetchall()
+
+
+def db_get_round_stats(engine: Engine, round_id: int) -> dict:
+    sql = text("""
+        SELECT COALESCE(SUM(qty), 0) AS total_tickets,
+               COUNT(DISTINCT buyer) AS unique_wallets
+        FROM tickets_bought
+        WHERE chain_id = :chain_id
+          AND contract_addr = :contract
+          AND round_id = :round_id
+    """)
+    with engine.connect() as conn:
+        row = conn.execute(sql, {
+            "chain_id": int(CHAIN_ID),
+            "contract": LOTTO_ADDR.lower(),
+            "round_id": int(round_id),
+        }).fetchone()
+    return {
+        "total_tickets": int(row[0] or 0) if row else 0,
+        "unique_wallets": int(row[1] or 0) if row else 0,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -970,91 +990,22 @@ else:
 
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-# Multiple wallet simulation
-st.subheader("🧪 Multiple Wallet Simulation")
-st.caption("This lets you test fairness perception before public launch. It does not write to blockchain.")
-
-with st.expander("Open simulator", expanded=True):
-    sim_text = st.text_area(
-        "Enter one wallet per line as: label, tickets",
-        value="Wallet A,10\nWallet B,5\nWallet C,2\nWallet D,1",
-        height=120,
-    )
-
-    sim_rows = []
-    for line in sim_text.splitlines():
-        line = line.strip()
-        if not line or "," not in line:
-            continue
-        label, qty_s = line.rsplit(",", 1)
-        try:
-            qty = max(0, int(qty_s.strip()))
-            if qty > 0:
-                sim_rows.append((label.strip() or f"Wallet {len(sim_rows) + 1}", qty))
-        except Exception:
-            pass
-
-    sim_total = sum(q for _, q in sim_rows)
-    if sim_total <= 0:
-        st.warning("Add at least one wallet with tickets, e.g. Wallet A,10")
-    else:
-        sim_df = pd.DataFrame([{
-            "Wallet": label,
-            "Tickets": qty,
-            "Odds %": round(pct(qty, sim_total), 4),
-            "Over 50 Cap?": "⚠️ Yes" if qty > MAX_TICKETS_PER_WALLET else "No",
-        } for label, qty in sim_rows])
-
-        sc1, sc2 = st.columns([1, 1], gap="large")
-        with sc1:
-            st.dataframe(
-                sim_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Odds %": st.column_config.ProgressColumn(
-                        "Odds %",
-                        min_value=0,
-                        max_value=100,
-                        format="%.2f%%",
-                    )
-                },
-            )
-        with sc2:
-            fig = go.Figure(go.Bar(
-                x=sim_df["Wallet"],
-                y=sim_df["Odds %"],
-                text=[f"{v:.2f}%" for v in sim_df["Odds %"]],
-                textposition="auto",
-                hovertemplate="%{x}: %{y:.2f}%<extra></extra>",
-            ))
-            fig.update_layout(
-                height=310,
-                margin=dict(l=0, r=0, t=10, b=0),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#e9eef7"),
-                yaxis=dict(title="Odds %", range=[0, 100], gridcolor="rgba(255,255,255,.08)"),
-                xaxis=dict(title=""),
-            )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-        max_sim_qty = max(q for _, q in sim_rows)
-        for label, qty in sim_rows:
-            st.markdown(odds_badge_html(label, qty, pct(qty, sim_total), max_sim_qty), unsafe_allow_html=True)
-
-st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
-
 # Winner display
 st.subheader("🏆 Frontend Winner Display")
-default_result_round = max(1, round_id - 1) if state == 0 else round_id
+default_result_round = max(0, round_id - 1) if state == 0 else round_id
 result_round = st.number_input(
     "Round to show results for",
-    min_value=1,
+    min_value=0,
     value=int(default_result_round),
     step=1,
     help="Current round is open, so default is previous completed round.",
 )
+
+try:
+    result_round_stats = db_get_round_stats(engine, int(result_round))
+except Exception as e:
+    result_round_stats = {"total_tickets": 0, "unique_wallets": 0}
+    st.warning(f"Could not load round participation stats from Neon: {e}")
 
 draw_meta = get_draw_revealed_for_round(
     int(result_round),
@@ -1096,12 +1047,9 @@ else:
         with dm2:
             st.metric("Admin Fee", f"{draw_meta['admin_fee']:,.2f} {sym}")
         with dm3:
-            st.metric("Draw Path", "Emergency" if draw_meta["emergency"] else "Normal")
+            st.metric("Tickets Bought", f"{result_round_stats['total_tickets']:,}")
         with dm4:
-            if draw_meta.get("tx_hash"):
-                st.link_button("View Draw Tx", f"https://bscscan.com/tx/{draw_meta['tx_hash']}")
-            else:
-                st.metric("Source", "Stored result")
+            st.metric("Unique Wallets", f"{result_round_stats['unique_wallets']:,}")
 
     for idx, ev in enumerate(winner_events, start=1):
         st.markdown(
