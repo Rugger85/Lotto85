@@ -926,69 +926,69 @@ else:
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Live odds
-st.subheader("🎯 Live Odds & Fairness")
-try:
-    my_current_qty = db_get_current_round_wallet_qty(engine, wallet, round_id)
-    leaderboard_rows = db_get_round_leaderboard(engine, round_id, limit=100)
-except Exception as e:
-    my_current_qty = 0
-    leaderboard_rows = []
-    st.warning(f"Could not load odds from Neon: {e}")
+# st.subheader("🎯 Live Odds & Fairness")
+# try:
+#     my_current_qty = db_get_current_round_wallet_qty(engine, wallet, round_id)
+#     leaderboard_rows = db_get_round_leaderboard(engine, round_id, limit=100)
+# except Exception as e:
+#     my_current_qty = 0
+#     leaderboard_rows = []
+#     st.warning(f"Could not load odds from Neon: {e}")
 
-my_odds = pct(my_current_qty, sold)
+# my_odds = pct(my_current_qty, sold)
 
-oc1, oc2, oc3, oc4 = st.columns([1.35, 1, 1, 1], gap="medium")
-with oc1:
-    st.markdown(
-        f"""
-<div class="odds-hero">
-  <div style="font-size:11px; letter-spacing:1px; font-weight:900; color:rgba(233,238,247,.70); text-transform:uppercase;">Your Winning Chance</div>
-  <div class="odds-num">{my_odds:.2f}%</div>
-  <div style="font-size:13px; color:rgba(233,238,247,.70); margin-top:6px;">You own <b>{my_current_qty}</b> of <b>{sold}</b> ticket(s) in Round {round_id}.</div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-with oc2:
-    st.metric("Your Round Tickets", f"{my_current_qty:,}")
-with oc3:
-    st.metric("Total Sold", f"{sold:,}")
-with oc4:
-    st.metric("Anti-Whale Room", f"{max(0, MAX_TICKETS_PER_WALLET - my_current_qty):,}")
+# oc1, oc2, oc3, oc4 = st.columns([1.35, 1, 1, 1], gap="medium")
+# with oc1:
+#     st.markdown(
+#         f"""
+# <div class="odds-hero">
+#   <div style="font-size:11px; letter-spacing:1px; font-weight:900; color:rgba(233,238,247,.70); text-transform:uppercase;">Your Winning Chance</div>
+#   <div class="odds-num">{my_odds:.2f}%</div>
+#   <div style="font-size:13px; color:rgba(233,238,247,.70); margin-top:6px;">You own <b>{my_current_qty}</b> of <b>{sold}</b> ticket(s) in Round {round_id}.</div>
+# </div>
+# """,
+#         unsafe_allow_html=True,
+#     )
+# with oc2:
+#     st.metric("Your Round Tickets", f"{my_current_qty:,}")
+# with oc3:
+#     st.metric("Total Sold", f"{sold:,}")
+# with oc4:
+#     st.metric("Anti-Whale Room", f"{max(0, MAX_TICKETS_PER_WALLET - my_current_qty):,}")
 
-if sold > 0 and leaderboard_rows:
-    max_qty = max([int(r[1]) for r in leaderboard_rows] + [1])
-    lead_df = pd.DataFrame([{
-        "Wallet": fmt_addr(r[0]),
-        "Tickets": int(r[1]),
-        "Odds %": round(pct(int(r[1]), sold), 4),
-        "Ticket Range": f"{int(r[2])} → {int(r[3])}",
-        "Purchases": int(r[4]),
-    } for r in leaderboard_rows])
+# if sold > 0 and leaderboard_rows:
+#     max_qty = max([int(r[1]) for r in leaderboard_rows] + [1])
+#     lead_df = pd.DataFrame([{
+#         "Wallet": fmt_addr(r[0]),
+#         "Tickets": int(r[1]),
+#         "Odds %": round(pct(int(r[1]), sold), 4),
+#         "Ticket Range": f"{int(r[2])} → {int(r[3])}",
+#         "Purchases": int(r[4]),
+#     } for r in leaderboard_rows])
 
-    st.dataframe(
-        lead_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Odds %": st.column_config.ProgressColumn(
-                "Odds %",
-                help="Wallet tickets / total tickets sold",
-                min_value=0,
-                max_value=100,
-                format="%.2f%%",
-            )
-        },
-    )
+#     st.dataframe(
+#         lead_df,
+#         use_container_width=True,
+#         hide_index=True,
+#         column_config={
+#             "Odds %": st.column_config.ProgressColumn(
+#                 "Odds %",
+#                 help="Wallet tickets / total tickets sold",
+#                 min_value=0,
+#                 max_value=100,
+#                 format="%.2f%%",
+#             )
+#         },
+#     )
 
-    st.markdown("##### Top wallet odds")
-    for r in leaderboard_rows[:5]:
-        qty = int(r[1])
-        st.markdown(odds_badge_html(fmt_addr(r[0]), qty, pct(qty, sold), max_qty), unsafe_allow_html=True)
-else:
-    st.caption("Odds leaderboard appears after current-round purchases are synced into Neon.")
+#     st.markdown("##### Top wallet odds")
+#     for r in leaderboard_rows[:5]:
+#         qty = int(r[1])
+#         st.markdown(odds_badge_html(fmt_addr(r[0]), qty, pct(qty, sold), max_qty), unsafe_allow_html=True)
+# else:
+#     st.caption("Odds leaderboard appears after current-round purchases are synced into Neon.")
 
-st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
+# st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Winner display
 st.subheader("🏆 Frontend Winner Display")
