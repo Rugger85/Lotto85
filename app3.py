@@ -991,7 +991,7 @@ st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 # st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Winner display
-st.subheader("🏆 Frontend Winner Display")
+st.subheader("Last Round Winner Pool")
 default_result_round = max(0, round_id - 1) if state == 0 else round_id
 result_round = st.number_input(
     "Round to show results for",
