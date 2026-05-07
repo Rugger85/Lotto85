@@ -963,14 +963,13 @@ if st.session_state.active_tab == "landing":
     st.markdown(
         f"""
 <div class="card">
-  <span class="pill">Provably Fair · Public Stats · BSC Mainnet</span>
+  <span class="pill">Transparent · On-Chain · Auditable</span>
   <div class="heroTitle">
     LOTTO<b style="color:{ACCENT};">85</b><br>
-    A lottery you can <span class="yh">verify yourself</span>
+    A verifiable lottery <span class="yh">built on BSC</span>
   </div>
   <div class="muted" style="font-size:16px; max-width:78ch;">
-    Buy tickets with USDT on BNB Smart Chain. See the live prize pool, ticket sales,
-    latest winners, odds preview, and draw transparency before connecting any wallet.
+    and verify every purchase with public events. Connect your wallet to unlock the dashboard.
   </div>
 </div>
 """,
@@ -1034,7 +1033,7 @@ if st.session_state.active_tab == "landing":
     left, right = st.columns([1.15, 0.85], gap="large")
 
     with left:
-        st.markdown("### 🏆 Latest Winners")
+        st.markdown("### Latest Winners")
 
         last_winners = get_last_winners(int(snap["dec"]))
 
@@ -1073,7 +1072,7 @@ if st.session_state.active_tab == "landing":
             st.info("No winners yet. After the first draw, latest winners will appear here publicly.")
 
     with right:
-        st.markdown("### ⚡ Join Current Round")
+        st.markdown("### Join Current Round")
 
         st.markdown(
             f"""
@@ -1121,7 +1120,7 @@ if st.session_state.active_tab == "landing":
 
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-    st.markdown("### 🔥 Public Live Activity")
+    st.markdown("### Public Live Activity")
 
     try:
         rows = db_get_round_leaderboard(engine, round_id, limit=20) if engine else []
@@ -1160,7 +1159,7 @@ if st.session_state.active_tab == "landing":
 
     st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
-    st.markdown("### 🔐 Why LOTTO85 is transparent")
+    st.markdown("### Why LOTTO85 is transparent")
 
     f1, f2, f3 = st.columns(3)
 
@@ -1170,7 +1169,7 @@ if st.session_state.active_tab == "landing":
 <div class="card feature-card">
   <h4>1. Public Contract</h4>
   <div class="muted">
-    Ticket purchases, rounds, winners and payouts are visible on-chain.
+    Publicly verifiable contract and purchases.
   </div>
 </div>
 """,
@@ -1181,9 +1180,9 @@ if st.session_state.active_tab == "landing":
         st.markdown(
             """
 <div class="card feature-card">
-  <h4>2. Commit-Reveal Draw</h4>
+  <h4>2. Live Draw</h4>
   <div class="muted">
-    The draw secret is committed before sales close and revealed after the draw.
+    Live event of reveal and distribution of Prize money.
   </div>
 </div>
 """,
@@ -1196,7 +1195,7 @@ if st.session_state.active_tab == "landing":
 <div class="card feature-card">
   <h4>3. Public Winners</h4>
   <div class="muted">
-    Winners are shown without wallet connection using the contract's stored winner data.
+    Winners addresses provable through bscscan.
   </div>
 </div>
 """,
@@ -1240,7 +1239,7 @@ st.write(
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # My tickets
-st.subheader("🎫 My Tickets")
+st.subheader("My Tickets")
 
 try:
     my_rows = db_get_tickets(engine, wallet)
@@ -1276,7 +1275,7 @@ else:
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Live odds
-st.subheader("🎯 Live Odds & Fairness")
+st.subheader("Live Odds & Fairness")
 
 try:
     my_current_qty = db_get_current_round_wallet_qty(engine, wallet, round_id)
@@ -1356,7 +1355,7 @@ else:
 st.markdown('<div class="hdiv"></div>', unsafe_allow_html=True)
 
 # Winner display
-st.subheader("🏆 Last Round Winner Pool")
+st.subheader("Last Round Winner Pool")
 
 default_result_round = max(0, round_id - 1) if state == 0 else round_id
 
@@ -1474,14 +1473,14 @@ pot_after_fee = pool - admin_amt
 c1, c2, c3 = st.columns(3, gap="large")
 
 with c1:
-    st.markdown('#### <span class="yh">🪙 Prize Structure</span>', unsafe_allow_html=True)
+    st.markdown('#### <span class="yh">Prize Structure</span>', unsafe_allow_html=True)
     st.write(f"Admin: **{admin_pct:.0f}%** · Prize pool: **{prize_pool_pct:.0f}%**")
 
     for i, p in enumerate(winner_pct, start=1):
         st.write(f"Winner {i}: **{p}%** — estimated **{pot_after_fee * p / 100:,.4f} {sym}**")
 
 with c2:
-    st.markdown('#### <span class="yh">🧾 Recent Current-Round Transfers</span>', unsafe_allow_html=True)
+    st.markdown('#### <span class="yh">Recent Current-Round Transfers</span>', unsafe_allow_html=True)
 
     try:
         rows = db_get_round_leaderboard(engine, round_id, limit=20)
@@ -1507,7 +1506,7 @@ with c2:
         st.caption(f"Recent transfers unavailable: {e}")
 
 with c3:
-    st.markdown('#### <span class="yh">📈 Platform Stats</span>', unsafe_allow_html=True)
+    st.markdown('#### <span class="yh">Platform Stats</span>', unsafe_allow_html=True)
     st.metric("USDT Contract", f"{snap['c_usdt']:,.2f} {sym}")
     st.metric("USDT Admin", f"{snap['a_usdt']:,.2f} {sym}")
     st.metric("BNB Contract", f"{snap['c_bnb']:.6f}")
